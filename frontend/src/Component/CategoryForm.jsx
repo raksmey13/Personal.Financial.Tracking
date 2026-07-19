@@ -1,101 +1,398 @@
-import React, { useState } from 'react';
-import { FaTag, FaWallet, FaCalendarAlt, FaClock, FaUser, FaPen, FaStar, FaRegCommentDots } from "react-icons/fa";
-
+import React, { useState, useEffect, useRef } from 'react';
+import { FaTag, FaRegTrashAlt, FaPlus, FaMinus, FaHome, FaShoppingCart, FaCar, FaHeart, FaEdit, FaChevronDown, FaChevronUp } from "react-icons/fa";
+import TransactionModal from "./TransactionModal";
+import { categoryAPI, accountAPI, transactionAPI } from "../API/index";
+import { getCategoryIconSource } from '../utils/icon';
 
 const CategoryForm = () => {
+  const [categories, setCategories] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [showIncomeExpenseModal, setShowIncomeExpenseModal] = useState(null); // "income" | "expense" | null
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+
+  // 🚀 PAGINATION STATES
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+
+  // 🚀 ACCORDION STATE: Keeps track of which main category IDs are expanded
+  const [expandedCategoryIds, setExpandedCategoryIds] = useState([]);
+
+  const fileInputRef = useRef(null);
+
   const [formData, setFormData] = useState({
     name: '',
-    accounts: '',
-    fromTo: '',
-    type: 'Expenses',
+    icon: 'tag',
+    type: 'expense',
+    parent_id: ''
   });
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  const iconList = [
+    { name: 'tag', icon: <FaTag /> },
+    { name: 'home', icon: <FaHome /> },
+    { name: 'cart', icon: <FaShoppingCart /> },
+    { name: 'car', icon: <FaCar /> },
+    { name: 'heart', icon: <FaHeart /> }
+  ];
+
+  const fetchInitialData = async () => {
+    try {
+      const [catRes, accRes] = await Promise.all([
+        categoryAPI.getAll(),
+        accountAPI.getAll()
+      ]);
+      setCategories(Array.isArray(catRes.data) ? catRes.data : []);
+      setAccounts(Array.isArray(accRes.data) ? accRes.data : []);
+    } catch (error) {
+      console.error("Axios sync breakdown in categories layout:", error);
+    }
   };
 
+  useEffect(() => {
+    fetchInitialData();
+  }, []);
+
+  // 🛠️ FIXED: Filters out system management rows so they never clutter your dropdown list
+  const validParentCategories = categories.filter(cat => {
+    const isMainCategory = cat.parent_id === null || cat.parent_id === undefined;
+    const isNotSelf = cat.id !== editingCategoryId;
+
+    // Explicit clean exclusions for system ledger infrastructure rows
+    const catNameLower = cat.name.toLowerCase();
+    const isNotSystemRow =
+      !catNameLower.includes("top-up") &&
+      !catNameLower.includes("principal") &&
+      !catNameLower.includes("opening balance") &&
+      !catNameLower.includes("credit card payment") &&
+      !catNameLower.includes("loan repayment");
+
+    return isMainCategory && isNotSelf && isNotSystemRow;
+  });
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result;
+        setFormData(prev => ({ ...prev, icon: base64String }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const renderCategoryIcon = (iconValue, categoryObj = null) => {
+    let finalSrc = iconValue;
+    if (categoryObj) {
+      const systemSrc = getCategoryIconSource(categoryObj);
+      if (systemSrc) {
+        finalSrc = systemSrc;
+      }
+    }
+
+    if (!finalSrc) return <FaTag />;
+
+    if (typeof finalSrc === 'string' && (finalSrc.startsWith('data:image') || finalSrc.includes('/') || finalSrc.includes('.'))) {
+      return <img src={finalSrc} alt="category-icon" className="w-full h-full object-cover rounded-full" />;
+    }
+
+    const found = iconList.find(i => i.name === finalSrc);
+    return found ? found.icon : <FaTag />;
+  };
+
+  const closeModal = () => setShowIncomeExpenseModal(null);
+
+  const openTransactionModal = (type) => {
+    setShowIncomeExpenseModal(type);
+  };
+
+  const handleSaveCategory = async (e) => {
+    if (e) e.preventDefault();
+
+    const payload = {
+      name: formData.name.trim(),
+      icon: formData.icon,
+      type: formData.type,
+      parent_id: formData.parent_id ? parseInt(formData.parent_id) : null
+    };
+
+    try {
+      let response;
+      if (editingCategoryId) {
+        response = await categoryAPI.update(editingCategoryId, payload);
+      } else {
+        response = await categoryAPI.create(payload);
+      }
+
+      if (response.status === 200 || response.status === 201) {
+        setFormData({ name: '', icon: 'tag', type: 'expense', parent_id: '' });
+        setEditingCategoryId(null);
+        fetchInitialData();
+      }
+    } catch (error) {
+      console.error("Axios save error on category object:", error);
+      alert(error.response?.data?.detail || "An error occurred while saving category.");
+    }
+  };
+
+  const startEditCategory = (cat) => {
+    setEditingCategoryId(cat.id);
+    setFormData({
+      name: cat.name,
+      icon: cat.icon || 'tag',
+      type: cat.type,
+      parent_id: cat.parent_id ? String(cat.parent_id) : ''
+    });
+  };
+
+  const handleDeleteCategory = async (id) => {
+    if (window.confirm("Are you sure you want to delete this category? If it's a main category, its subcategories will be detached.")) {
+      try {
+        const response = await categoryAPI.delete(id);
+        if (response.status === 200) {
+          alert("Category deleted successfully!");
+          fetchInitialData();
+          const totalMain = categories.filter((cat) => cat.parent_id === null).length - 1;
+          const maxPage = Math.ceil(totalMain / itemsPerPage) || 1;
+          if (currentPage > maxPage) {
+            setCurrentPage(maxPage);
+          }
+        }
+      } catch (error) {
+        console.error("Error deleting category:", error);
+        alert("Failed to delete category. It might be linked to existing transactions.");
+      }
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingCategoryId(null);
+    setFormData({ name: '', icon: 'tag', type: 'expense', parent_id: '' });
+  };
+
+  const toggleCategoryExpand = (catId, hasSubCats) => {
+    if (!hasSubCats) return;
+    if (expandedCategoryIds.includes(catId)) {
+      setExpandedCategoryIds(expandedCategoryIds.filter(id => id !== catId));
+    } else {
+      setExpandedCategoryIds([...expandedCategoryIds, catId]);
+    }
+  };
+
+  const mainCategories = categories.filter((cat) => cat.parent_id === null);
+  const totalPages = Math.ceil(mainCategories.length / itemsPerPage) || 1;
+
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentMainCategories = mainCategories.slice(indexOfFirstItem, indexOfLastItem);
+
   return (
-    <div className="flex items-center justify-center min-h-screen bg-[#f3f4ff] p-4">
-      <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
-        <h2 className="text-2xl font-bold text-gray-700 text-center mb-6">Add Category</h2>
+    <div className="max-w-full mx-auto min-h-screen bg-[#f8f9fd] p-6 lg:p-8 relative">
+      <div className="flex flex-col lg:flex-row items-start justify-start gap-10 w-full">
 
-        <form className="space-y-4">
-          {/* Category Name */}
+        {/* LEFT SIDE: ADD / EDIT CATEGORY */}
+        <div className="w-full lg:w-[320px] bg-white rounded-3xl shadow-xl p-8 flex-shrink-0 border border-gray-100">
+          <h2 className="text-xl font-bold text-center text-[#212529] mb-8">
+            {editingCategoryId ? "Edit Category" : "Add Category"}
+          </h2>
+
+          <form onSubmit={handleSaveCategory} className="space-y-5">
+            <div>
+              <label className="block text-gray-400 text-[10px] font-bold uppercase mb-1">Category name</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-300 font-semibold"
+                placeholder="e.g., Food, Salary"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-gray-400 text-[10px] font-bold uppercase mb-1">Parent Category (Optional)</label>
+              <div className="relative">
+                <select
+                  value={formData.parent_id}
+                  onChange={(e) => setFormData({ ...formData, parent_id: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm bg-white focus:outline-none focus:border-blue-300 font-semibold appearance-none cursor-pointer text-gray-700"
+                >
+                  <option value="">-- None (Set as Main Category) --</option>
+                  {validParentCategories.map((pCat) => (
+                    <option key={pCat.id} value={pCat.id}>{pCat.name}</option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                  <FaChevronDown size={12} />
+                </div>
+              </div>
+            </div>
+
+            {/* CUSTOM IMAGE PICKER */}
+            <div className="flex items-center justify-between py-2">
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
+              <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-50 text-gray-500 px-4 py-1 rounded-lg text-[10px] font-bold border border-gray-200 hover:bg-gray-100">
+                Choose Icon
+              </button>
+              <div className="w-12 h-12 rounded-full bg-[#c9e4e4] border-4 border-white shadow-sm flex items-center justify-center overflow-hidden text-gray-700">
+                 {renderCategoryIcon(formData.icon, categories.find(c => c.name.toLowerCase() === formData.name.toLowerCase().trim()))}
+              </div>
+            </div>
+
+            {/* SYSTEM ALLOCATION TYPE */}
+            <div className="space-y-3 pt-2">
+              <p className="text-gray-400 text-[10px] font-bold uppercase">System Allocation Type</p>
+              <div className="flex items-center gap-6 font-semibold text-gray-700">
+                <label className="flex items-center gap-3 text-sm text-gray-600 cursor-pointer">
+                  <input type="radio" name="categoryType" checked={formData.type === 'income'} onChange={() => setFormData({...formData, type: 'income'})} className="w-4 h-4 text-blue-500" />
+                  Income
+                </label>
+                <label className="flex items-center gap-3 text-sm text-gray-600 cursor-pointer">
+                  <input type="radio" name="categoryType" checked={formData.type === 'expense'} onChange={() => setFormData({...formData, type: 'expense'})} className="w-4 h-4 text-blue-500" />
+                  Expense
+                </label>
+              </div>
+            </div>
+
+            <div className="flex justify-end items-center gap-4 pt-6">
+              <button type="button" onClick={handleCancelEdit} className="text-red-400 font-bold text-sm uppercase hover:text-red-600">
+                Cancel
+              </button>
+              <button type="submit" className="bg-[#4caf50] text-white px-8 py-2 rounded-xl font-bold shadow-lg hover:bg-green-600">
+                {editingCategoryId ? "Update" : "Save"}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* RIGHT SIDE: TABLE CATEGORY WITH VISUAL HIERARCHY TREE */}
+        <div className="flex-1 bg-white rounded-3xl shadow-sm border border-gray-100 p-8 min-h-[500px] flex flex-col justify-between">
           <div>
-            <label className="block text-gray-500 text-sm mb-1">Category name</label>
-            <input
-              type="text"
-              name="name"
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-sm"
-              placeholder="Enter category name"
-            />
-          </div>
+            <h2 className="text-2xl font-bold text-center text-gray-500 mb-10 tracking-tight">System Categories</h2>
+            <div className="space-y-2">
+              {currentMainCategories.length === 0 ? (
+                <div className="text-center text-gray-400 italic py-10 text-sm">No main categories found.</div>
+              ) : (
+                currentMainCategories.map((mainCat) => {
+                  const subCats = categories.filter((sub) => sub.parent_id === mainCat.id);
+                  const hasSubCats = subCats.length > 0;
+                  const isExpanded = expandedCategoryIds.includes(mainCat.id);
 
-          {/* Accounts */}
-          <div>
-            <label className="block text-gray-500 text-sm mb-1">Accounts</label>
-            <input
-              type="text"
-              name="accounts"
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-sm"
-              placeholder="All accounts"
-            />
-          </div>
+                  return (
+                    <div key={mainCat.id} className="space-y-1 mb-4">
+                      {/* Main Category Row */}
+                      <div
+                        onClick={() => toggleCategoryExpand(mainCat.id, hasSubCats)}
+                        className={`flex items-center justify-between p-4 hover:bg-gray-50 rounded-2xl border-b border-gray-50 group transition-all bg-white ${hasSubCats ? 'cursor-pointer select-none' : ''}`}
+                      >
+                        <div className="flex items-center gap-5">
+                          <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center text-xl text-blue-600 overflow-hidden">
+                            {renderCategoryIcon(mainCat.icon, mainCat)}
+                          </div>
 
-          {/* From / to */}
-          <div>
-            <label className="block text-gray-500 text-sm mb-1">From / to (Optional)</label>
-            <input
-              type="text"
-              name="fromTo"
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-sm"
-            />
-          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-bold text-gray-700 text-base capitalize">{mainCat.name}</h3>
+                              {hasSubCats && (
+                                <FaChevronDown
+                                  size={10}
+                                  className={`text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-blue-500' : ''}`}
+                                />
+                              )}
+                            </div>
+                            <span className={`text-[9px] px-2 py-0.5 font-extrabold uppercase rounded ${mainCat.type === 'income' ? 'bg-green-100 text-green-700' : mainCat.type === 'transfer' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                              {mainCat.type}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => startEditCategory(mainCat)} className="text-gray-300 hover:text-blue-500 transition-colors">
+                            <FaEdit size={18} />
+                          </button>
+                          <button onClick={() => handleDeleteCategory(mainCat.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                            <FaRegTrashAlt size={18} />
+                          </button>
+                          <div className={`w-1.5 h-10 rounded-full ${mainCat.type === 'income' ? 'bg-green-400' : mainCat.type === 'transfer' ? 'bg-amber-400' : 'bg-red-400'}`}></div>
+                        </div>
+                      </div>
 
-          {/* Icon & Color Section */}
-          <div className="flex items-center justify-between py-2">
-            <button
-              type="button"
-              className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-1 rounded-md text-sm border border-gray-300 shadow-sm transition"
-            >
-              Choose Icon
-            </button>
-            <div className="w-12 h-12 rounded-full bg-[#c9e4e4] border-4 border-white shadow-sm"></div>
-          </div>
+                      {/* CONDITIONAL REVEAL ACCORDION BLOCK FOR SUBCATEGORIES */}
+                      {hasSubCats && isExpanded && (
+                        <div className="space-y-1 pt-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                          {subCats.map((subCat) => (
+                            <div key={subCat.id} className="flex items-center justify-between p-3 ml-12 bg-gray-50/60 hover:bg-gray-50 rounded-xl border border-dashed border-gray-200 transition-colors">
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-md text-gray-500 overflow-hidden shadow-sm">
+                                  {renderCategoryIcon(subCat.icon, subCat)}
+                                </div>
 
-          {/* Type Checkboxes */}
-          <div className="space-y-2">
-            <p className="text-gray-500 text-sm">Type</p>
-            <div className="flex flex-col gap-2">
-              <label className="flex items-center space-x-3 cursor-pointer">
-                <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded border-gray-300" />
-                <span className="text-gray-600 text-sm">Expenses</span>
-              </label>
-              <label className="flex items-center space-x-3 cursor-pointer">
-                <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded border-gray-300" />
-                <span className="text-gray-600 text-sm">Income</span>
-              </label>
+                                <div>
+                                  <h4 className="font-bold text-gray-600 text-sm capitalize">{subCat.name}</h4>
+                                  <span className="text-[8px] text-gray-400 tracking-wider uppercase font-semibold">Subcategory</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-4 pr-2">
+                                <button onClick={() => startEditCategory(subCat)} className="text-gray-300 hover:text-blue-500 transition-colors">
+                                  <FaEdit size={16} />
+                                </button>
+                                <button onClick={() => handleDeleteCategory(subCat.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                                  <FaRegTrashAlt size={16} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex justify-end items-center space-x-4 pt-4">
-            <button
-              type="button"
-              className="text-red-500 font-medium hover:text-red-700 transition"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="bg-[#4caf50] hover:bg-[#43a047] text-white px-8 py-2 rounded-lg font-medium shadow-md transition"
-            >
-              Save
-            </button>
-          </div>
-        </form>
+          {/* PAGINATION FOOTER CONTROLS ROW */}
+          {mainCategories.length > itemsPerPage && (
+            <div className="flex items-center justify-between pt-6 mt-6 border-t border-gray-100">
+              <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+                Page {currentPage} of {totalPages}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  className="px-4 py-2 text-xs font-extrabold uppercase tracking-wider rounded-xl border border-gray-200 text-gray-500 bg-white hover:bg-gray-50 transition-colors disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  className="px-4 py-2 text-xs font-extrabold uppercase tracking-wider rounded-xl bg-[#3D5AFE] text-white hover:bg-blue-700 shadow-md transition-colors disabled:opacity-40 disabled:hover:bg-[#3D5AFE] cursor-pointer"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* FLOATING ACTION BUTTONS */}
+      <div className="fixed bottom-10 right-10 flex flex-col gap-4 z-50">
+        <button onClick={() => openTransactionModal('income')} className="w-14 h-14 rounded-full bg-[#4caf50] text-white flex items-center justify-center text-2xl shadow-xl hover:scale-110 active:scale-95 transition-all"><FaPlus /></button>
+        <button onClick={() => openTransactionModal('expense')} className="w-14 h-14 rounded-full bg-[#ef4444] text-white flex items-center justify-center text-2xl shadow-xl hover:scale-110 active:scale-95 transition-all"><FaMinus /></button>
+      </div>
+
+      {showIncomeExpenseModal && (
+        <TransactionModal
+          type={showIncomeExpenseModal}
+          closeModal={closeModal}
+          categories={categories}
+          accounts={accounts}
+          fetchInitialData={fetchInitialData}
+        />
+      )}
     </div>
   );
 };
