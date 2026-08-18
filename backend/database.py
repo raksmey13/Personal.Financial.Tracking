@@ -1,9 +1,14 @@
+import os
 from sqlmodel import create_engine, Session, SQLModel
 from typing import Annotated
 from fastapi import Depends
 
-DATABASE_URL = "postgresql://postgres:1399@localhost:5432/FinanceDB"
-
+# Fetch DATABASE_URL from environment variables (Render/Production)
+# Fallback to local PostgreSQL string if running locally without a .env
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:1399@localhost:5432/FinanceDB"
+)
 
 engine = create_engine(
     DATABASE_URL,
@@ -18,7 +23,6 @@ engine = create_engine(
 def get_session():
     with Session(engine) as session:
         yield session
-
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
