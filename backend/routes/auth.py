@@ -92,7 +92,7 @@ def provision_user_default_categories(session: Session, user_id: int):
 async def send_otp_email(email_to: str, otp_code: str):
     try:
         params: resend.Emails.SendParams = {
-            "from": "PFTrack <onboarding@resend.dev>",
+            "from": "PFTrack <no-reply@pftrack.site>",
             "to": [email_to],
             "subject": "PFTrack Account Verification Code",
             "html": f"""
