@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FaUser, FaEnvelope, FaLock, FaUserPlus, FaEye, FaEyeSlash, FaCheck, FaKey, FaArrowLeft } from 'react-icons/fa';
+import { FaUser, FaEnvelope, FaLock, FaUserPlus, FaEye, FaEyeSlash, FaCheck, FaKey, FaArrowLeft, FaRedo } from 'react-icons/fa';
 import { userAPI } from '../API/index';
 
 const Signup = ({ onSwitchToLogin }) => {
@@ -22,6 +22,7 @@ const Signup = ({ onSwitchToLogin }) => {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
 
   // Dynamic Password Strength Calculator
   const calculateStrength = (pass) => {
@@ -63,10 +64,7 @@ const Signup = ({ onSwitchToLogin }) => {
         password: password
       });
 
-      // 🟢 Instruct user that the real email has been dispatched
       setSuccessMsg(`Account created! A 6-digit OTP code has been sent to ${email}. Please check your inbox.`);
-
-      // Transition UI to Step 2 (OTP Input Screen)
       setStep(2);
 
     } catch (err) {
@@ -104,8 +102,6 @@ const Signup = ({ onSwitchToLogin }) => {
       });
 
       alert(response.data?.message || "Account verified successfully! Redirecting to login.");
-
-      // Redirect to Login view upon successful OTP validation
       onSwitchToLogin();
 
     } catch (err) {
@@ -116,6 +112,29 @@ const Signup = ({ onSwitchToLogin }) => {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 🚀 STEP 2: RESEND OTP ACTION
+  const handleResendOtp = async () => {
+    setError("");
+    setSuccessMsg("");
+    setResendLoading(true);
+
+    try {
+      const response = await userAPI.resendOTP({
+        email: email.trim()
+      });
+
+      setSuccessMsg(response.data?.message || "A new OTP has been sent to your email.");
+    } catch (err) {
+      console.error("Resend OTP error:", err);
+      setError(
+        err.response?.data?.detail ||
+        "Failed to resend OTP. Please try again."
+      );
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -281,20 +300,33 @@ const Signup = ({ onSwitchToLogin }) => {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || resendLoading}
               className="w-full py-3 bg-emerald-600 text-white rounded-2xl font-bold text-xs tracking-wide shadow-lg shadow-emerald-500/10 hover:bg-emerald-700 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
               <FaCheck />
               {loading ? "Verifying Code..." : "Verify OTP & Activate Account"}
             </button>
 
-            <button
-              type="button"
-              onClick={() => { setStep(1); setError(""); }}
-              className="w-full py-2.5 text-gray-400 font-bold text-xs hover:text-gray-600 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <FaArrowLeft /> Back to Registration
-            </button>
+            {/* Back to Registration & Resend OTP Action Row */}
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={() => { setStep(1); setError(""); setSuccessMsg(""); }}
+                className="py-2 text-gray-400 font-bold text-xs hover:text-gray-600 transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <FaArrowLeft /> Back
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={resendLoading || loading}
+                className="py-2 text-blue-600 font-bold text-xs hover:underline transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+              >
+                <FaRedo className={`${resendLoading ? "animate-spin" : ""}`} />
+                {resendLoading ? "Sending..." : "Resend OTP"}
+              </button>
+            </div>
           </form>
         )}
 
