@@ -13,11 +13,13 @@ from dotenv import load_dotenv
 from sqlmodel import Session, select
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters
-from database import create_db_and_tables, engine
+from database import engine, create_db_and_tables
 from models import User, Account
 from service.init_db import init_superadmin_and_defaults
 from routes.telegram_service import process_incoming_telegram_message
 from routes.ai_engine import extract_text_from_image_bytes
+from database import get_session  # or relative: from ..database import get_session
+import resend
 
 from routes import (
     transactions_router,
