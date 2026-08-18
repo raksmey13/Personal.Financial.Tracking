@@ -18,8 +18,8 @@ const AdminDashboard = () => {
     setError("");
     try {
       const [statsRes, usersRes] = await Promise.all([
-        axios.get("http://127.0.0.1:8000/admin/stats", getAuthHeaders()),
-        axios.get("http://127.0.0.1:8000/admin/users", getAuthHeaders())
+        axios.get("https://personal-financial-tracking.onrender.com/admin/stats", getAuthHeaders()),
+        axios.get("https://personal-financial-tracking.onrender.com/admin/users", getAuthHeaders())
       ]);
 
       setStats(statsRes.data);
@@ -38,7 +38,7 @@ const AdminDashboard = () => {
 
   const handleToggleActive = async (userId) => {
     try {
-      await axios.patch(`http://127.0.0.1:8000/admin/users/${userId}/toggle-active`, {}, getAuthHeaders());
+      await axios.patch(`https://personal-financial-tracking.onrender.com/admin/users/${userId}/toggle-active`, {}, getAuthHeaders());
       fetchAdminData();
     } catch (err) {
       alert(err.response?.data?.detail || "Failed to update user status.");

@@ -87,7 +87,7 @@ const TransactionForm = () => {
 
   const fetchPendingData = async () => {
     try {
-      const res = await axios.get("http://127.0.0.1:8000/budgets/pending/", getAuthHeaders());
+      const res = await axios.get("https://personal-financial-tracking.onrender.com/budgets/pending/", getAuthHeaders());
       setPendingList(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error("Failed to fetch pending transactions:", error);
@@ -127,7 +127,7 @@ const TransactionForm = () => {
 
     try {
       await axios.post(
-        `http://127.0.0.1:8000/budgets/pending/${pendingId}/approve`,
+        `https://personal-financial-tracking.onrender.com/budgets/pending/${pendingId}/approve`,
         {
           category_id: parseInt(selectedCategoryId),
           remember_rule: true
@@ -148,7 +148,7 @@ const TransactionForm = () => {
     if (window.confirm("Reject and remove this item from your pending inbox?")) {
       try {
         await axios.delete(
-          `http://127.0.0.1:8000/budgets/pending/${pendingId}`,
+          `https://personal-financial-tracking.onrender.com/budgets/pending/${pendingId}`,
           getAuthHeaders()
         );
         fetchPendingData();

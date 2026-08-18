@@ -281,7 +281,7 @@ useEffect(() => {
   const fetchUserProfile = async (authToken) => {
     if (!authToken) return;
     try {
-      const res = await fetch("http://127.0.0.1:8000/users/me", {
+      const res = await fetch("https://personal-financial-tracking.onrender.com/users/me", {
         headers: { Authorization: `Bearer ${authToken}` }
       });
       if (res.ok) {
@@ -298,7 +298,7 @@ useEffect(() => {
 
     fetchUserProfile(token);
 
-    fetch("http://127.0.0.1:8000/settings/", {
+    fetch("https://personal-financial-tracking.onrender.com/settings/", {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then((res) => {
@@ -315,7 +315,7 @@ useEffect(() => {
   const loadNotifications = async () => {
     if (!token) return;
     try {
-      const response = await fetch("http://127.0.0.1:8000/notifications/", {
+      const response = await fetch("https://personal-financial-tracking.onrender.com/notifications/", {
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`

@@ -48,7 +48,7 @@ const AIChatDrawer = () => {
     try {
       // B. CALL FastAPI BACKEND: POST /ai/chat
       const response = await axios.post(
-        "http://127.0.0.1:8000/ai/chat", // Update port if your API is different
+        "https://personal-financial-tracking.onrender.com/ai/chat", // Update port if your API is different
         { message: userMessage },
         getAuthHeaders()
       );

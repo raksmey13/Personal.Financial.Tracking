@@ -35,7 +35,7 @@ const Settings = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const res = await fetch('http://127.0.0.1:8000/settings/', {
+        const res = await fetch('https://personal-financial-tracking.onrender.com/settings/', {
           headers: getAuthHeaders(),
         });
         if (res.ok) {
@@ -60,7 +60,7 @@ const Settings = () => {
     setLoading(true);
     setMessage('');
     try {
-      const response = await fetch('http://127.0.0.1:8000/settings/', {
+      const response = await fetch('https://personal-financial-tracking.onrender.com/settings/', {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -89,7 +89,7 @@ const Settings = () => {
     setTelegramLoading(true);
     setTelegramError('');
     try {
-      const response = await fetch('http://127.0.0.1:8000/settings/telegram/generate-link', {
+      const response = await fetch('https://personal-financial-tracking.onrender.com/settings/telegram/generate-link', {
         method: 'POST',
         headers: getAuthHeaders(), // 🟢 Pass Bearer token here
       });
