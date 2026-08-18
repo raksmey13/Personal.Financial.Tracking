@@ -1,0 +1,33 @@
+{
+  "nav": {
+    "dashboard": "ផ្ទាំងគ្រប់គ្រង",
+    "transaction": "ប្រតិបត្តិការ",
+    "category": "ជំពូក/ប្រភេទ",
+    "accounts": "គណនី",
+    "budget": "ថវិកា",
+    "analytics": "វិភាគទិន្នន័យ",
+    "import_export": "នាំចូល/នាំចេញ",
+    "export_pdf": "ទាញយក PDF",
+    "export_csv": "ទាញយក CSV",
+    "import_csv": "នាំចូលទិន្នន័យ CSV",
+    "calendar": "ប្រតិទិន",
+    "settings": "ការកំណត់",
+    "notifications": "ការជូនដំណឹង",
+    "profile": "ព័ត៌មានផ្ទាល់ខ្លួន",
+    "sign_out": "ចាកចេញពីប្រព័ន្ធ"
+  },
+  "summary": {
+    "total_income": "ចំណូលសរុប",
+    "total_expense": "ចំណាយសរុប",
+    "net_balance": "សមតុល្យសុទ្ធ"
+  },
+  "settings": {
+    "title": "ការកំណត់អ្នកប្រើប្រាស់",
+    "language": "ភាសា",
+    "first_day_of_month": "ថ្ងៃចាប់ផ្តើមនៃខែ",
+    "first_day_of_week": "ថ្ងៃចាប់ផ្តើមនៃសប្តាហ៍",
+    "transition_set_transaction": "ស្ថានភាពផ្លាស់ប្តូរនៃប្រតិបត្តិការ",
+    "display_bank_check": "បង្ហាញរូបតំណាងផ្ទៀងផ្ទាត់ធនាគារ",
+    "dark_mode": "របៀបងងឹត"
+  }
+}

@@ -1,22 +1,40 @@
-from sqlmodel import text
+from sqlmodel import Session, text
 from database import engine
 
-print("⚙️ Manually forcing category table structural layout changes...")
+print("🚀 Running custom database migration / cleanup...")
 
-with engine.connect() as connection:
-    # 1. Physically append parent_id to your live table if it doesn't exist
-    connection.execute(text("ALTER TABLE public.category ADD COLUMN IF NOT EXISTS parent_id INTEGER DEFAULT NULL;"))
+with Session(engine) as session:
+    try:
+        # 1. Reassign any orphaned records from user ID 1 to user ID 13
+        tables = [
+            "transaction",
+            "account",
+            "category",
+            "budget",
+            "budget_strategy",  # <--- Added this table
+            "notification",
+            "pendingtransaction"
+        ]
 
-    # 2. Add the foreign key constraint link manually with a clear system name
-    connection.execute(text("""
-        DO $$ 
-        BEGIN 
-            IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name='fk_category_parent') THEN
-                ALTER TABLE public.category ADD CONSTRAINT fk_category_parent FOREIGN KEY (parent_id) REFERENCES public.category(id);
-            END IF;
-        END $$;
-    """))
+        for table in tables:
+            try:
+                session.exec(text(f'UPDATE "{table}" SET user_id = 13 WHERE user_id = 1;'))
+                print(f"✅ Reassigned {table} records from user 1 to user 13")
+            except Exception as e:
+                print(f"⚠️ Skipped {table}: {e}")
 
-    connection.commit()
+        # 2. Force lock the telegram_id to user 13 and clear it from user 1
+        session.exec(text('UPDATE "user" SET telegram_id = NULL WHERE id = 1;'))
+        session.exec(text('UPDATE "user" SET telegram_id = 5143452981 WHERE id = 13;'))
+        print("✅ Updated telegram_id mapping for user 13")
 
-print("✅ Structural synchronization complete! Check your database table now.")
+        # 3. Safely delete user ID 1 now that all foreign keys are cleared/moved
+        session.exec(text('DELETE FROM "user" WHERE id = 1;'))
+        print("🗑️ Successfully deleted ghost user ID 1!")
+
+        session.commit()
+        print("🎉 Migration completed successfully!")
+
+    except Exception as e:
+        session.rollback()
+        print(f"❌ Migration failed: {e}")

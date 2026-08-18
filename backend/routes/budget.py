@@ -1,176 +1,254 @@
-from fastapi import APIRouter, HTTPException, Body, status
+import calendar
 from datetime import date
 from decimal import Decimal
-from sqlmodel import select, func
+from typing import List, Optional
+from fastapi import APIRouter, HTTPException, Body, status, Depends
+from pydantic import BaseModel
+from sqlmodel import select, func, or_
 from database import SessionDep
-from models import Budget, Transaction, Category
-
-# 🟢 IMPORT THE NOTIFICATION ENGINE FOR CAPACITY CHECKING
+from models import (
+    Budget,
+    Transaction,
+    Category,
+    Account,
+    BudgetStrategy,
+    BudgetStrategyItem,
+    BudgetCategoryLink,
+    StrategyItemCategoryLink,
+    User
+)
+from .auth import get_current_user
 from .notification import check_and_trigger_notifications
 
 router = APIRouter(prefix="/budgets", tags=["Budgets"])
 
 
-@router.post("/", response_model=Budget, status_code=status.HTTP_201_CREATED)
-def create_budget(payload: dict = Body(...), session: SessionDep = None):
-    """
-    Creates a new budget line entry, converting multi-category arrays into a highly indexable csv string.
-    Supports customized percentage allocations and automatically triggers a savings transfer sweep.
-    """
-    cat_ids_list = payload.get("category_ids", [])
-    is_group = payload.get("is_group_budget", False)
-    strategy = payload.get("strategy_type", "spending_cap")
+# =========================================================
+# 1. PAYLOAD SCHEMAS FOR DYNAMIC STRATEGIES
+# =========================================================
+class StrategyItemCreate(BaseModel):
+    bucket_name: str
+    percentage: float
+    category_ids: List[int] = []
 
-    if (is_group or strategy == "50_30_20") and not cat_ids_list:
+
+class StrategyUpdatePayload(BaseModel):
+    name: str = "Custom Allocation Strategy"
+    items: List[StrategyItemCreate]
+
+
+class StandardBudgetCreate(BaseModel):
+    name: Optional[str] = None
+    limit_amount: float = 0.0
+    currency: str = "USD"
+    category_ids: List[int] = []
+    is_group_budget: bool = False
+    is_rollover: bool = False
+    strategy_type: str = "spending_cap"
+
+
+# =========================================================
+# 2. DYNAMIC STRATEGY ROUTES (MACRO BUCKETS)
+# =========================================================
+@router.get("/strategy/")
+def get_active_strategy(
+    session: SessionDep,
+    current_user: User = Depends(get_current_user)
+):
+    """Fetches the active overarching percentage allocation strategy for the authenticated user."""
+    strategy = session.exec(
+        select(BudgetStrategy).where(
+            BudgetStrategy.user_id == current_user.id,
+            BudgetStrategy.is_active == True
+        )
+    ).first()
+
+    if not strategy:
+        strategy = BudgetStrategy(user_id=current_user.id, name="50/30/20 Rule", is_active=True)
+        session.add(strategy)
+        session.commit()
+        session.refresh(strategy)
+
+        default_items = [
+            BudgetStrategyItem(strategy_id=strategy.id, bucket_name="Needs", percentage=Decimal("50.0")),
+            BudgetStrategyItem(strategy_id=strategy.id, bucket_name="Wants", percentage=Decimal("30.0")),
+            BudgetStrategyItem(strategy_id=strategy.id, bucket_name="Savings", percentage=Decimal("20.0")),
+        ]
+        session.add_all(default_items)
+        session.commit()
+        session.refresh(strategy)
+
+    formatted_items = []
+    for item in strategy.items:
+        cat_ids = [link.category_id for link in item.category_links if link.category_id is not None]
+        formatted_items.append({
+            "id": item.id,
+            "bucket_name": item.bucket_name,
+            "percentage": float(item.percentage),
+            "category_ids": cat_ids
+        })
+
+    return {
+        "id": strategy.id,
+        "name": strategy.name,
+        "items": formatted_items
+    }
+
+
+@router.put("/strategy/")
+def update_strategy(
+    payload: StrategyUpdatePayload,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user)
+):
+    """Replaces current allocation buckets using relational StrategyItemCategoryLink junction tables."""
+    try:
+        total_pct = sum(Decimal(str(item.percentage)) for item in payload.items)
+    except Exception:
         raise HTTPException(
-            status_code=400,
-            detail="Structural configuration error: Strategy targets require at least one category selection choice."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid percentage format provided."
         )
 
-    try:
-        csv_string = ",".join([str(cid) for cid in cat_ids_list]) if cat_ids_list else None
-        primary_id = int(cat_ids_list[0]) if cat_ids_list else None
+    if total_pct != Decimal("100.00") and round(total_pct, 2) != Decimal("100.00"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Total percentage allocation must equal exactly 100%. Received: {total_pct}%"
+        )
 
-        assigned_name = payload.get("name")
+    strategy = session.exec(
+        select(BudgetStrategy).where(
+            BudgetStrategy.user_id == current_user.id,
+            BudgetStrategy.is_active == True
+        )
+    ).first()
+
+    if not strategy:
+        strategy = BudgetStrategy(user_id=current_user.id, name=payload.name, is_active=True)
+        session.add(strategy)
+        session.commit()
+        session.refresh(strategy)
+    else:
+        strategy.name = payload.name
+        session.add(strategy)
+
+    old_items = session.exec(
+        select(BudgetStrategyItem).where(BudgetStrategyItem.strategy_id == strategy.id)
+    ).all()
+    for item in old_items:
+        session.delete(item)
+
+    session.commit()
+
+    for item_data in payload.items:
+        new_item = BudgetStrategyItem(
+            strategy_id=strategy.id,
+            bucket_name=item_data.bucket_name,
+            percentage=Decimal(str(item_data.percentage))
+        )
+        session.add(new_item)
+        session.commit()
+        session.refresh(new_item)
+
+        if item_data.category_ids:
+            links = [
+                StrategyItemCategoryLink(strategy_item_id=new_item.id, category_id=cid)
+                for cid in item_data.category_ids
+            ]
+            session.add_all(links)
+
+    session.commit()
+    session.refresh(strategy)
+
+    return {"status": 200, "message": "Strategy updated successfully", "strategy": strategy}
+
+
+@router.delete("/strategy/")
+def delete_strategy(
+    session: SessionDep,
+    current_user: User = Depends(get_current_user)
+):
+    """Deactivates the active master allocation strategy for the current user."""
+    strategy = session.exec(
+        select(BudgetStrategy).where(
+            BudgetStrategy.user_id == current_user.id,
+            BudgetStrategy.is_active == True
+        )
+    ).first()
+
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Active strategy not found")
+
+    try:
+        strategy.is_active = False
+        session.add(strategy)
+        session.commit()
+        return {"message": "Master Allocation Strategy deactivated successfully"}
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=f"Database Modification Error: {str(e)}")
+
+
+# =========================================================
+# 3. STANDARD CATEGORY BUDGET ROUTES
+# =========================================================
+@router.post("/", response_model=Budget, status_code=status.HTTP_201_CREATED)
+def create_budget(
+    payload: StandardBudgetCreate,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user)
+):
+    cat_ids_list = payload.category_ids
+    is_group = payload.is_group_budget
+    strategy = payload.strategy_type
+
+    if is_group and not cat_ids_list:
+        raise HTTPException(status_code=400, detail="Group targets require at least one category selection.")
+
+    try:
+        primary_id = cat_ids_list[0] if cat_ids_list else None
+
+        assigned_name = payload.name
         if not assigned_name and primary_id:
             db_cat = session.get(Category, primary_id)
             if db_cat:
                 assigned_name = db_cat.name
 
         if not assigned_name:
-            if strategy == "50_30_20":
-                assigned_name = "Pro Allocation Master Strategy"
-            else:
-                assigned_name = "Group Budget Envelope" if is_group else "Unnamed Allocation Target"
-
-        needs_p = int(payload.get("needs_percentage", 50))
-        wants_p = int(payload.get("wants_percentage", 30))
-        savings_p = int(payload.get("savings_percentage", 20))
-
-        start_dt = date.fromisoformat(payload.get("start_date"))
-        end_dt = date.fromisoformat(payload.get("end_date"))
-        active_user_id = payload.get("user_id", 1)
+            assigned_name = "Group Budget Envelope" if is_group else "Unnamed Allocation Target"
 
         new_budget = Budget(
             name=assigned_name,
-            monthly_limit=Decimal(str(payload.get("limit_amount", 0.0))),
-            category_ids_csv=csv_string,
-            category_id=primary_id,
-            is_group_budget=True if strategy == "50_30_20" else is_group,
-            is_rollover=payload.get("is_rollover", False) if strategy == "spending_cap" else False,
-            start_date=start_dt,
-            end_date=end_dt,
+            monthly_limit=Decimal(str(payload.limit_amount)),
+            currency=payload.currency,
+            is_group_budget=is_group,
+            is_rollover=payload.is_rollover if strategy == "spending_cap" else False,
             strategy_type=strategy,
-            user_id=active_user_id,
-            needs_percentage=needs_p,
-            wants_percentage=wants_p,
-            savings_percentage=savings_p
+            user_id=current_user.id,
+            is_active=True
         )
 
         session.add(new_budget)
         session.commit()
         session.refresh(new_budget)
 
-        # 🟢 THE SYSTEM AUTOMATION SWEEP TRIGGER (Double-Entry Strategy Pattern)
-        if strategy == "50_30_20":
-            # 1. Fetch any income transactions that already exist within this timeframe
-            income_statement = select(Transaction).where(
-                Transaction.user_id == active_user_id,
-                func.lower(Transaction.type) == "income",
-                Transaction.transaction_date >= start_dt,
-                Transaction.transaction_date <= end_dt
-            )
-            historical_incomes = session.exec(income_statement).all()
+        if cat_ids_list:
+            links = [
+                BudgetCategoryLink(budget_id=new_budget.id, category_id=cid)
+                for cid in cat_ids_list
+            ]
+            session.add_all(links)
+            session.commit()
 
-            # 2. Look up the targeted Savings Account structure row to hold the balance jump
-            from models import Account
-
-            # Grab the unique ACTIVE designated target account
-            savings_account = session.exec(
-                select(Account).where(
-                    Account.user_id == active_user_id,
-                    Account.is_active == True,
-                    Account.is_savings_target == True
-                )
-            ).first()
-
-            # Fallback block to guard stability if flag isn't explicitly set yet
-            if not savings_account:
-                savings_account = session.exec(
-                    select(Account).where(
-                        Account.user_id == active_user_id,
-                        Account.is_active == True,
-                        func.lower(Account.account_type).contains("save")
-                    )
-                ).first()
-
-            if savings_account and historical_incomes:
-                for income_tx in historical_incomes:
-                    # Compute the percentage sweep slice
-                    sweep_amount = float(income_tx.amount) * (savings_p / 100.0)
-
-                    if sweep_amount > 0:
-                        # 💸 Row A: The Outflow leaving the source checking account
-                        outflow_transfer = Transaction(
-                            user_id=active_user_id,
-                            amount=Decimal(str(sweep_amount)),
-                            type="transfer",
-                            account_id=income_tx.account_id,  # Linked to Checking Source
-                            category_id=primary_id,
-                            transaction_date=date.today(),
-                            description=f"🤖 Auto Sweep Outflow ({income_tx.description})"
-                        )
-
-                        # 🐷 Row B: The Inflow landing inside your savings ledger vault
-                        inflow_transfer = Transaction(
-                            user_id=active_user_id,
-                            amount=Decimal(str(sweep_amount)),
-                            type="transfer",
-                            account_id=savings_account.id,  # Linked directly to pristine active account ID
-                            category_id=primary_id,
-                            transaction_date=date.today(),
-                            description=f"🤖 Auto Sweep Inflow ({income_tx.description})"
-                        )
-
-                        session.add(outflow_transfer)
-                        session.add(inflow_transfer)
-
-                        # Synchronize memory values before flushing context targets
-                        savings_account.balance += Decimal(str(sweep_amount))
-
-                        # Find checking source account to balance books seamlessly
-                        source_account = session.get(Account, income_tx.account_id)
-                        if source_account:
-                            source_account.balance -= Decimal(str(sweep_amount))
-                            session.add(source_account)
-
-                        # Trigger context sweep success notification for historical entry processing
-                        try:
-                            check_and_trigger_notifications(
-                                user_id=active_user_id,
-                                account_id=income_tx.account_id,
-                                category_id=primary_id,
-                                session=session,
-                                tx_date=date.today(),
-                                sweep_triggered=True,
-                                sweep_amount=Decimal(str(sweep_amount))
-                            )
-                        except Exception as notif_err:
-                            print(f"Historical sweep notification warning: {notif_err}")
-
-                session.add(savings_account)
-                # Bulk save all generated balanced rows safely
-                session.commit()
-
-        # 🟢 EVALUATE BUDGET ALERTS UPON NEW SPECIFICATION (Historical limits verification)
+        today = date.today()
         if primary_id:
             try:
                 check_and_trigger_notifications(
-                    user_id=active_user_id,
-                    account_id=1,  # Fallback dummy check structural account ID
+                    user_id=current_user.id,
+                    account_id=1,
                     category_id=primary_id,
                     session=session,
-                    tx_date=start_dt  # Evaluates historical metrics using new budget timeline window
+                    tx_date=today
                 )
             except Exception as e:
                 print(f"Budget initiation limits evaluation warning: {e}")
@@ -183,136 +261,141 @@ def create_budget(payload: dict = Body(...), session: SessionDep = None):
 
 
 @router.get("/calculated/")
-def get_calculated_budgets(session: SessionDep):
+def get_calculated_budgets(
+    session: SessionDep,
+    current_user: User = Depends(get_current_user)
+):
     """
-    Computes real-time dynamic budget tracking balances and custom calendar vs spending alert streams.
+    Computes real-time dynamic budget balances using a Unified Base Currency (USD base)
+    with 1 USD = 4000 KHR conversion for seamless dual-currency tracking.
     """
-    db_budgets = session.exec(select(Budget)).all()
-    calculated_response = []
     today = date.today()
-    active_user_id = 1
+    start_of_month = date(today.year, today.month, 1)
+    _, last_day = calendar.monthrange(today.year, today.month)
+    end_of_month = date(today.year, today.month, last_day)
+
+    days_remaining = (end_of_month - today).days
+    calculated_response = []
+
+    # 🟢 Standard Exchange Rate Baseline
+    KHR_RATE = 4000.0
+
+    # 📊 1. FETCH & CALCULATE UNIFIED MASTER ALLOCATION STRATEGY
+    strategy = session.exec(
+        select(BudgetStrategy).where(
+            BudgetStrategy.user_id == current_user.id,
+            BudgetStrategy.is_active == True
+        )
+    ).first()
+
+    if strategy and strategy.items:
+        # Helper: Calculates total amount across both currencies normalized to USD base
+        def get_unified_amount(tx_type: str, category_ids: list = None):
+            # USD Transactions Query
+            stmt_usd = (
+                select(func.sum(func.abs(Transaction.amount)))
+                .join(Account, Transaction.account_id == Account.id, isouter=True)
+                .where(
+                    Transaction.user_id == current_user.id,
+                    func.lower(Transaction.type) == tx_type.lower(),
+                    Transaction.transaction_date >= start_of_month,
+                    Transaction.transaction_date <= end_of_month,
+                    func.trim(func.upper(Account.currency)) == "USD"
+                )
+            )
+
+            # KHR Transactions Query
+            stmt_khr = (
+                select(func.sum(func.abs(Transaction.amount)))
+                .join(Account, Transaction.account_id == Account.id, isouter=True)
+                .where(
+                    Transaction.user_id == current_user.id,
+                    func.lower(Transaction.type) == tx_type.lower(),
+                    Transaction.transaction_date >= start_of_month,
+                    Transaction.transaction_date <= end_of_month,
+                    func.trim(func.upper(Account.currency)) == "KHR"
+                )
+            )
+
+            if category_ids:
+                stmt_usd = stmt_usd.where(Transaction.category_id.in_(category_ids))
+                stmt_khr = stmt_khr.where(Transaction.category_id.in_(category_ids))
+
+            val_usd = float(session.exec(stmt_usd).first() or 0.0)
+            val_khr = float(session.exec(stmt_khr).first() or 0.0)
+
+            # Combined equivalent in USD
+            return val_usd + (val_khr / KHR_RATE)
+
+        # Total Combined Monthly Income Pool (USD Base)
+        total_income_usd = get_unified_amount("income")
+
+        bucket_calculations = []
+        for item in strategy.items:
+            pct_float = float(item.percentage)
+            cat_ids = [link.category_id for link in item.category_links if link.category_id is not None]
+
+            # 🟢 Unified Cap: Shared percentage of total wealth pool
+            allowed_usd = (pct_float / 100.0) * total_income_usd
+            allowed_khr = allowed_usd * KHR_RATE
+
+            # 🟢 Unified Spent: USD spent + (KHR spent / 4000)
+            spent_usd = get_unified_amount("expense", cat_ids) if cat_ids else 0.0
+            spent_khr = spent_usd * KHR_RATE
+
+            bucket_calculations.append({
+                "bucket_name": item.bucket_name,
+                "percentage": pct_float,
+                "allowed_usd": allowed_usd,
+                "allowed_khr": allowed_khr,
+                "spent_usd": spent_usd,
+                "spent_khr": spent_khr,
+                "allowed_amount": allowed_usd,
+                "spent_amount": spent_usd,
+                "category_ids": cat_ids
+            })
+
+        calculated_response.append({
+            "id": f"strategy-{strategy.id}",
+            "name": strategy.name,
+            "strategy_type": "master_allocation",
+            "income_pool": total_income_usd,
+            "income_pool_khr": total_income_usd * KHR_RATE,
+            "buckets": bucket_calculations,
+            "status": "green",
+            "img": f"https://api.dicebear.com/7.x/identicon/svg?seed=strategy-{strategy.id}"
+        })
+
+    # 📊 2. FETCH & CALCULATE STANDARD CATEGORY BUDGETS (Spending Caps / Fixed)
+    db_budgets = session.exec(
+        select(Budget).where(
+            Budget.user_id == current_user.id,
+            Budget.is_active == True
+        )
+    ).all()
 
     for budget in db_budgets:
-        target_cat_ids = []
+        target_cat_ids = [link.category_id for link in budget.category_links if link.category_id is not None]
+        target_currency = (budget.currency or "USD").upper().strip()
 
-        if budget.category_ids_csv:
-            for x in budget.category_ids_csv.split(","):
-                if x.strip() and x.strip().isdigit():
-                    target_cat_ids.append(int(x.strip()))
-        elif budget.category_id:
-            target_cat_ids = [budget.category_id]
-
-        days_remaining = (budget.end_date - today).days
-
-        # 📊 ROUTING MODE A: THE 50/30/20 MULTI-POOL TRACKING CALCULATION
-        if budget.strategy_type == "50_30_20":
-            income_statement = select(func.sum(Transaction.amount)).where(
-                Transaction.user_id == active_user_id,
-                func.lower(Transaction.type) == "income",
-                Transaction.transaction_date >= budget.start_date,
-                Transaction.transaction_date <= budget.end_date
-            )
-            raw_income = session.exec(income_statement).first()
-            total_income = float(raw_income) if raw_income is not None else 0.0
-
-            n_pct = budget.needs_percentage or 50
-            w_pct = budget.wants_percentage or 30
-            s_pct = budget.savings_percentage or 20
-
-            needs_cap_allowance = (n_pct / 100.0) * total_income
-            wants_cap_allowance = (w_pct / 100.0) * total_income
-            savings_target_allocation = (s_pct / 100.0) * total_income
-
-            wants_spent = 0.0
-            if target_cat_ids:
-                wants_statement = select(func.sum(Transaction.amount)).where(
-                    Transaction.user_id == active_user_id,
-                    func.lower(Transaction.type) == "expense",
-                    Transaction.category_id.in_(target_cat_ids),
-                    Transaction.transaction_date >= budget.start_date,
-                    Transaction.transaction_date <= budget.end_date
-                )
-                raw_wants = session.exec(wants_statement).first()
-                wants_spent = float(raw_wants) if raw_wants is not None else 0.0
-
-            needs_statement = select(func.sum(Transaction.amount)).where(
-                Transaction.user_id == active_user_id,
-                func.lower(Transaction.type) == "expense",
-                Transaction.transaction_date >= budget.start_date,
-                Transaction.transaction_date <= budget.end_date
-            )
-            if target_cat_ids:
-                needs_statement = needs_statement.where(Transaction.category_id.not_in(target_cat_ids))
-
-            raw_needs = session.exec(needs_statement).first()
-            needs_spent = float(raw_needs) if raw_needs is not None else 0.0
-
-            total_spent_overall = needs_spent + wants_spent
-            retained_leftovers = total_income - total_spent_overall
-
-            wants_progress = round((wants_spent / wants_cap_allowance) * 100) if wants_cap_allowance > 0 else 0
-
-            if wants_progress >= 100:
-                status_flag = "red"
-                alert_message = f"🚨 Strategy Alert: Your Lifestyle 'Wants' pool has exceeded its {w_pct}% limit by ${abs(wants_cap_allowance - wants_spent):.2f}!"
-            elif wants_progress >= 80:
-                status_flag = "amber"
-                alert_message = f"⚠️ Warning: Lifestyle 'Wants' tracking metric has consumed {wants_progress}% of its allowed strategy room."
-            else:
-                status_flag = "green"
-                alert_message = f"🎉 Strategy Engaged: You have generated ${max(0.0, retained_leftovers):.2f} total retained leftovers so far."
-
-            calculated_response.append({
-                "id": budget.id,
-                "name": budget.name,
-                "start": budget.start_date.strftime("%m/%d/%Y"),
-                "end": budget.end_date.strftime("%m/%d/%Y"),
-                "spent": total_spent_overall,
-                "current": total_spent_overall,
-                "total": total_income,
-                "progress": wants_progress,
-                "residual": wants_cap_allowance - wants_spent,
-                "status": status_flag,
-                "days_left": days_remaining,
-                "alert_message": alert_message,
-                "strategy_type": budget.strategy_type,
-                "is_group_budget": True,
-                "is_rollover": False,
-                "category_id": budget.category_id,
-                "category_ids_csv": budget.category_ids_csv,
-                "income_pool": total_income,
-                "needs_allocation": {
-                    "pct": n_pct,
-                    "allowed": needs_cap_allowance,
-                    "spent": needs_spent
-                },
-                "wants_allocation": {
-                    "pct": w_pct,
-                    "allowed": wants_cap_allowance,
-                    "spent": wants_spent
-                },
-                "savings_allocation": {
-                    "pct": s_pct,
-                    "target_goal": savings_target_allocation,
-                },
-                "retained_leftovers": max(0.0, retained_leftovers),
-                "img": f"https://api.dicebear.com/7.x/identicon/svg?seed=strategy-{budget.id}"
-            })
-            continue
-
-        # 📊 ROUTING MODE B: STANDALONE DEFAULT MODE (Spending Cap & Fixed Allocation)
-        limit_float = float(budget.monthly_limit)
+        limit_float = float(budget.monthly_limit or 0.0)
         alert_message = None
         status_flag = "green"
 
         if not target_cat_ids:
             total_spent = Decimal("0.00")
         else:
-            spending_statement = select(func.sum(Transaction.amount)).where(
-                func.lower(Transaction.type) == "expense",
-                Transaction.category_id.in_(target_cat_ids),
-                Transaction.transaction_date >= budget.start_date,
-                Transaction.transaction_date <= budget.end_date
+            spending_statement = (
+                select(func.sum(func.abs(Transaction.amount)))
+                .join(Account, Transaction.account_id == Account.id, isouter=True)
+                .where(
+                    Transaction.user_id == current_user.id,
+                    func.lower(Transaction.type) == "expense",
+                    Transaction.category_id.in_(target_cat_ids),
+                    Transaction.transaction_date >= start_of_month,
+                    Transaction.transaction_date <= end_of_month,
+                    func.trim(func.upper(Account.currency)) == target_currency
+                )
             )
             raw_sum = session.exec(spending_statement).first()
             total_spent = Decimal(str(raw_sum)) if raw_sum is not None else Decimal("0.00")
@@ -321,14 +404,16 @@ def get_calculated_budgets(session: SessionDep):
         residual_pocket_balance = limit_float - spent_float
         progress_percentage = round((spent_float / limit_float) * 100) if limit_float > 0 else 0
 
-        if budget.strategy_type == "fixed_allocation":
+        current_strategy = budget.strategy_type or "spending_cap"
+
+        if current_strategy == "fixed_allocation":
             if spent_float < limit_float:
                 if days_remaining < 0:
                     status_flag = "red"
                     alert_message = f"🚨 Overdue! Your commitment for '{budget.name}' was due {abs(days_remaining)} days ago."
                 elif days_remaining == 0:
                     status_flag = "red"
-                    alert_message = f"⏰ Due Today! Don't forget to clear your ${limit_float:.2f} {budget.name} allocation."
+                    alert_message = f"⏰ Due Today! Don't forget to clear your {budget.currency} ${limit_float:.2f} {budget.name} allocation."
                 elif days_remaining <= 5:
                     status_flag = "amber"
                     alert_message = f"⚠️ Reminder: You only have {days_remaining} days left until your {budget.name} payment deadline!"
@@ -338,16 +423,17 @@ def get_calculated_budgets(session: SessionDep):
         else:
             if progress_percentage >= 100:
                 status_flag = "red"
-                alert_message = f"🚨 Alert: You have completely blown past your maximum budget for {budget.name} by ${abs(residual_pocket_balance):.2f}!"
+                alert_message = f"🚨 Alert: You have completely blown past your maximum budget for {budget.name} by {budget.currency} ${abs(residual_pocket_balance):.2f}!"
             elif progress_percentage >= 80:
                 status_flag = "amber"
                 alert_message = f"⚠️ Careful: You have consumed {progress_percentage}% of your spending limit for {budget.name}."
 
         calculated_response.append({
             "id": budget.id,
-            "name": budget.name,
-            "start": budget.start_date.strftime("%m/%d/%Y"),
-            "end": budget.end_date.strftime("%m/%d/%Y"),
+            "name": budget.name or "Category Budget",
+            "currency": budget.currency,
+            "start": start_of_month.strftime("%m/%d/%Y"),
+            "end": end_of_month.strftime("%m/%d/%Y"),
             "spent": spent_float,
             "current": spent_float,
             "total": limit_float,
@@ -356,11 +442,10 @@ def get_calculated_budgets(session: SessionDep):
             "status": status_flag,
             "days_left": days_remaining,
             "alert_message": alert_message,
-            "strategy_type": budget.strategy_type,
-            "is_group_budget": budget.is_group_budget,
-            "is_rollover": budget.is_rollover,
-            "category_id": budget.category_id,
-            "category_ids_csv": budget.category_ids_csv,
+            "strategy_type": current_strategy,
+            "is_group_budget": budget.is_group_budget or False,
+            "is_rollover": budget.is_rollover or False,
+            "category_ids": target_cat_ids,
             "img": f"https://api.dicebear.com/7.x/identicon/svg?seed={budget.id}"
         })
 
@@ -368,17 +453,26 @@ def get_calculated_budgets(session: SessionDep):
 
 
 @router.delete("/{budget_id}")
-def delete_budget(budget_id: int, session: SessionDep):
-    """
-    Permanently deletes a budget threshold rule.
-    """
-    budget = session.get(Budget, budget_id)
+def delete_budget(
+    budget_id: int,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user)
+):
+    """Deactivates a budget threshold rule for the authenticated user (Soft Delete)."""
+    budget = session.exec(
+        select(Budget).where(
+            Budget.id == budget_id,
+            Budget.user_id == current_user.id
+        )
+    ).first()
+
     if not budget:
         raise HTTPException(status_code=404, detail="Budget not found")
     try:
-        session.delete(budget)
+        budget.is_active = False
+        session.add(budget)
         session.commit()
-        return {"message": "Budget rule configuration cleared successfully"}
+        return {"message": "Budget rule deactivated successfully"}
     except Exception as e:
         session.rollback()
-        raise HTTPException(status_code=400, detail=f"Database Deletion Error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Database Modification Error: {str(e)}")

@@ -51,21 +51,19 @@ const CategoryForm = () => {
     fetchInitialData();
   }, []);
 
-  // 🛠️ FIXED: Filters out system management rows so they never clutter your dropdown list
+  // 🛠️ FIXED: Filters out system transfer rows so they never clutter your dropdown list
   const validParentCategories = categories.filter(cat => {
     const isMainCategory = cat.parent_id === null || cat.parent_id === undefined;
     const isNotSelf = cat.id !== editingCategoryId;
+    const isNotTransfer = cat.type !== 'transfer'; // Hides system transfer rows
 
-    // Explicit clean exclusions for system ledger infrastructure rows
     const catNameLower = cat.name.toLowerCase();
     const isNotSystemRow =
       !catNameLower.includes("top-up") &&
       !catNameLower.includes("principal") &&
-      !catNameLower.includes("opening balance") &&
-      !catNameLower.includes("credit card payment") &&
-      !catNameLower.includes("loan repayment");
+      !catNameLower.includes("opening balance");
 
-    return isMainCategory && isNotSelf && isNotSystemRow;
+    return isMainCategory && isNotSelf && isNotTransfer && isNotSystemRow;
   });
 
   const handleFileChange = (e) => {
@@ -124,6 +122,11 @@ const CategoryForm = () => {
       }
 
       if (response.status === 200 || response.status === 201) {
+          if (editingCategoryId) {
+          alert("Category updated successfully!");
+        } else {
+          alert("Category created successfully!");
+        }
         setFormData({ name: '', icon: 'tag', type: 'expense', parent_id: '' });
         setEditingCategoryId(null);
         fetchInitialData();
@@ -213,7 +216,23 @@ const CategoryForm = () => {
               <div className="relative">
                 <select
                   value={formData.parent_id}
-                  onChange={(e) => setFormData({ ...formData, parent_id: e.target.value })}
+                  onChange={(e) => {
+                    const selectedParentId = e.target.value;
+                    let autoInheritedType = formData.type;
+
+                    if (selectedParentId) {
+                      const parentCat = categories.find(c => String(c.id) === String(selectedParentId));
+                      if (parentCat) {
+                        autoInheritedType = parentCat.type;
+                      }
+                    }
+
+                    setFormData({
+                      ...formData,
+                      parent_id: selectedParentId,
+                      type: autoInheritedType
+                    });
+                  }}
                   className="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm bg-white focus:outline-none focus:border-blue-300 font-semibold appearance-none cursor-pointer text-gray-700"
                 >
                   <option value="">-- None (Set as Main Category) --</option>
@@ -238,16 +257,32 @@ const CategoryForm = () => {
               </div>
             </div>
 
-            {/* SYSTEM ALLOCATION TYPE */}
-            <div className="space-y-3 pt-2">
-              <p className="text-gray-400 text-[10px] font-bold uppercase">System Allocation Type</p>
+            {/* SYSTEM ALLOCATION TYPE (Auto-inherits and disables if parent category is selected) */}
+            <div className={`space-y-3 pt-2 ${formData.parent_id ? 'opacity-50 pointer-events-none' : ''}`}>
+              <p className="text-gray-400 text-[10px] font-bold uppercase">
+                System Allocation Type {formData.parent_id && <span className="text-blue-500 lowercase ml-1">(Inherited from parent)</span>}
+              </p>
               <div className="flex items-center gap-6 font-semibold text-gray-700">
                 <label className="flex items-center gap-3 text-sm text-gray-600 cursor-pointer">
-                  <input type="radio" name="categoryType" checked={formData.type === 'income'} onChange={() => setFormData({...formData, type: 'income'})} className="w-4 h-4 text-blue-500" />
+                  <input
+                    type="radio"
+                    name="categoryType"
+                    checked={formData.type === 'income'}
+                    onChange={() => setFormData({...formData, type: 'income'})}
+                    className="w-4 h-4 text-blue-500"
+                    disabled={!!formData.parent_id}
+                  />
                   Income
                 </label>
                 <label className="flex items-center gap-3 text-sm text-gray-600 cursor-pointer">
-                  <input type="radio" name="categoryType" checked={formData.type === 'expense'} onChange={() => setFormData({...formData, type: 'expense'})} className="w-4 h-4 text-blue-500" />
+                  <input
+                    type="radio"
+                    name="categoryType"
+                    checked={formData.type === 'expense'}
+                    onChange={() => setFormData({...formData, type: 'expense'})}
+                    className="w-4 h-4 text-blue-500"
+                    disabled={!!formData.parent_id}
+                  />
                   Expense
                 </label>
               </div>
@@ -379,9 +414,21 @@ const CategoryForm = () => {
       </div>
 
       {/* FLOATING ACTION BUTTONS */}
-      <div className="fixed bottom-10 right-10 flex flex-col gap-4 z-50">
-        <button onClick={() => openTransactionModal('income')} className="w-14 h-14 rounded-full bg-[#4caf50] text-white flex items-center justify-center text-2xl shadow-xl hover:scale-110 active:scale-95 transition-all"><FaPlus /></button>
-        <button onClick={() => openTransactionModal('expense')} className="w-14 h-14 rounded-full bg-[#ef4444] text-white flex items-center justify-center text-2xl shadow-xl hover:scale-110 active:scale-95 transition-all"><FaMinus /></button>
+      <div className="fixed bottom-6 right-3 flex flex-col gap-3 z-50">
+        <button
+          onClick={() => openTransactionModal('income')}
+          title="Add Income"
+          className="w-12 h-12 rounded-full bg-[#4caf50] text-white flex items-center justify-center text-lg shadow-2xl hover:scale-110 active:scale-95 transition-all cursor-pointer"
+        >
+          <FaPlus />
+        </button>
+        <button
+          onClick={() => openTransactionModal('expense')}
+          title="Add Expense"
+          className="w-12 h-12 rounded-full bg-[#ef4444] text-white flex items-center justify-center text-lg shadow-2xl hover:scale-110 active:scale-95 transition-all cursor-pointer"
+        >
+          <FaMinus />
+        </button>
       </div>
 
       {showIncomeExpenseModal && (

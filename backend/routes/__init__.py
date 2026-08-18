@@ -1,9 +1,14 @@
 from .transactions import router as transactions_router
-from .account import router as accounts_router        # Adjusted name to match your files
-from .category import router as categories_router    # Adjusted name to match your files
+from .account import router as accounts_router
+from .category import router as categories_router
 from .budget import router as budget_router
 from .analytic import router as analytics_router
 from .overview import router as overview_router
 from .calender import router as calender_router
 from .auth import router as auth_router
 from .notification import router as notification_router
+from .import_export import router as import_export_router
+from .setting import router as setting_router
+from .pending import router as pending_router
+from .ai_engine import router as ai_engine_router
+from .admin_router import router as admin_router

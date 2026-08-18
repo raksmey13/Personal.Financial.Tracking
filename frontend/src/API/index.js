@@ -24,6 +24,7 @@ API.interceptors.request.use(
 // Packaged Profile & Auth Management API Methods
 export const userAPI = {
   signup: (data) => API.post('/users/signup', data),
+  verifyOTP: (data) => API.post('/users/verify-otp', data), // 🟢 6-Digit OTP Verification Connection
   login: (data) => API.post('/users/login', data),
   getProfile: () => API.get('/users/me'),
   updateProfile: (data) => API.put('/users/me', data),
@@ -78,6 +79,31 @@ export const budgetAPI = {
 export const notificationAPI = {
   getAll: () => API.get('/notifications/'),
   markAsRead: (id) => API.put(`/notifications/${id}/read`),
+};
+
+export const exportImportAPI = {
+  getTemplateUrl: () => `${API.defaults.baseURL}/export-import/template`,
+
+  exportCSV: (params) => {
+    const queryString = new URLSearchParams(params).toString();
+    return `${API.defaults.baseURL}/export-import/csv?${queryString}`;
+  },
+
+  exportPDF: (params) => {
+    const queryString = new URLSearchParams(params).toString();
+    return `${API.defaults.baseURL}/export-import/pdf?${queryString}`;
+  },
+
+  importCSV: (formData) => API.post('/export-import/import', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    }
+  }),
+};
+
+export const settingsAPI = {
+  getSettings: () => API.get('/settings/'),
+  updateSettings: (data) => API.patch('/settings/', data),
 };
 
 export default API;

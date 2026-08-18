@@ -1,47 +1,125 @@
 import React, { useState } from 'react';
-import { FaUser, FaEnvelope, FaLock, FaUserPlus } from 'react-icons/fa';
-import { userAPI } from '../API/index'; // Ensure this points to your index.js file
+import { FaUser, FaEnvelope, FaLock, FaUserPlus, FaEye, FaEyeSlash, FaCheck, FaKey, FaArrowLeft } from 'react-icons/fa';
+import { userAPI } from '../API/index';
 
-const Signup = ({ onSwitchToLogin, onSignupSuccess }) => {
-  const [username, setUsername] = useState("");
+const Signup = ({ onSwitchToLogin }) => {
+  // Step State: 1 = Registration Form, 2 = 6-Digit OTP Entry Form
+  const [step, setStep] = useState(1);
+
+  // Form Input States
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
+  // OTP Input State
+  const [otpCode, setOtpCode] = useState("");
+
+  // UI Toggle & Feedback States
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  // Dynamic Password Strength Calculator
+  const calculateStrength = (pass) => {
+    let score = 0;
+    if (pass.length >= 8) score++;
+    if (/[A-Z]/.test(pass)) score++;
+    if (/[0-9]/.test(pass)) score++;
+    if (/[^A-Za-z0-9]/.test(pass)) score++;
+    return score;
+  };
+
+  const strength = calculateStrength(password);
+
+  const getStrengthLabel = () => {
+    if (!password) return { text: "", color: "bg-gray-200" };
+    if (strength <= 1) return { text: "Weak Password", color: "bg-red-500", textCol: "text-red-500" };
+    if (strength === 2 || strength === 3) return { text: "Moderate Password", color: "bg-amber-500", textCol: "text-amber-500" };
+    return { text: "Strong Password", color: "bg-emerald-500", textCol: "text-emerald-500" };
+  };
+
+  // 🚀 STEP 1: SUBMIT ACCOUNT CREATION
+  const handleSignupSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setSuccessMsg("");
 
-    // Password validation guard clause
     if (password !== confirmPassword) {
-      setError("Passwords do not match. Please re-verify entry values.");
+      setError("Passwords do not match. Please verify entry values.");
       return;
     }
 
     setLoading(true);
 
     try {
-      // 🚀 REAL REGISTRATION PIPELINE: Calls your FastAPI backend via the fixed /users/signup router
       await userAPI.signup({
-        username: username, // 🟢 FIXED: Sends raw string matching SignupRequest Pydantic model
-        email: email,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        email: email.trim(),
         password: password
       });
 
-      console.log("Successfully generated master account for:", username, email);
+      // 🟢 Instruct user that the real email has been dispatched
+      setSuccessMsg(`Account created! A 6-digit OTP code has been sent to ${email}. Please check your inbox.`);
 
-      // Switches view layout to login screen only after successful backend response
-      onSignupSuccess();
-      setLoading(false);
+      // Transition UI to Step 2 (OTP Input Screen)
+      setStep(2);
 
     } catch (err) {
-      // Catch errors from the server (like email already taken)
-      setError(err.response?.data?.detail || "Registration failed. Account might already exist.");
+      console.error("Signup submission error:", err);
+      const serverDetail = err.response?.data?.detail;
+      if (typeof serverDetail === 'string') {
+        setError(serverDetail);
+      } else if (Array.isArray(serverDetail)) {
+        setError(serverDetail[0]?.msg || "Invalid registration input parameters.");
+      } else {
+        setError("Registration failed. Please check your inputs and try again.");
+      }
+    } finally {
       setLoading(false);
     }
   };
+
+  // 🚀 STEP 2: SUBMIT 6-DIGIT OTP VERIFICATION
+  const handleOtpSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccessMsg("");
+
+    if (!otpCode || otpCode.trim().length < 6) {
+      setError("Please enter a valid 6-digit OTP code.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await userAPI.verifyOTP({
+        email: email.trim(),
+        otp_code: otpCode.trim()
+      });
+
+      alert(response.data?.message || "Account verified successfully! Redirecting to login.");
+
+      // Redirect to Login view upon successful OTP validation
+      onSwitchToLogin();
+
+    } catch (err) {
+      console.error("OTP verification error:", err);
+      setError(
+        err.response?.data?.detail ||
+        "Invalid OTP code. Please check the code and try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const strengthInfo = getStrengthLabel();
 
   return (
     <div className="min-h-screen bg-gray-50/50 flex items-center justify-center p-4">
@@ -49,8 +127,14 @@ const Signup = ({ onSwitchToLogin, onSignupSuccess }) => {
 
         {/* Header Block */}
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-black text-gray-800 tracking-tight">Create Your Account</h2>
-          <p className="text-xs text-gray-400 font-semibold">Join NetStream to begin tracking personal ledger metrics</p>
+          <h2 className="text-2xl font-black text-gray-800 tracking-tight">
+            {step === 1 ? "Create Your Account" : "Verify Account OTP"}
+          </h2>
+          <p className="text-xs text-gray-400 font-semibold">
+            {step === 1
+              ? "Join PFTrack to begin tracking personal finances"
+              : `Enter the 6-digit OTP code sent to ${email}`}
+          </p>
         </div>
 
         {error && (
@@ -59,71 +143,162 @@ const Signup = ({ onSwitchToLogin, onSignupSuccess }) => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Name Field Input Line */}
-          <div className="relative">
-            <FaUser className="absolute left-4 top-4 text-gray-400 text-xs" />
-            <input
-              type="text"
-              required
-              placeholder="Full Name / Handle"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
-            />
+        {successMsg && (
+          <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl text-xs font-bold text-emerald-600 text-center break-all">
+            ✅ {successMsg}
           </div>
+        )}
 
-          {/* Email Input Line */}
-          <div className="relative">
-            <FaEnvelope className="absolute left-4 top-4 text-gray-400 text-xs" />
-            <input
-              type="email"
-              required
-              placeholder="Valid Email Address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
-            />
-          </div>
+        {/* ================= STEP 1: ACCOUNT REGISTRATION FORM ================= */}
+        {step === 1 && (
+          <form onSubmit={handleSignupSubmit} className="space-y-4">
 
-          {/* Master Password Input Line */}
-          <div className="relative">
-            <FaLock className="absolute left-4 top-4 text-gray-400 text-xs" />
-            <input
-              type="password"
-              required
-              placeholder="Choose Secure Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
-            />
-          </div>
+            {/* First Name & Last Name Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="relative">
+                <FaUser className="absolute left-4 top-4 text-gray-400 text-xs" />
+                <input
+                  type="text"
+                  required
+                  placeholder="First Name"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
+                />
+              </div>
 
-          {/* Confirm Password Input Line */}
-          <div className="relative">
-            <FaLock className="absolute left-4 top-4 text-gray-400 text-xs" />
-            <input
-              type="password"
-              required
-              placeholder="Confirm Chosen Password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
-            />
-          </div>
+              <div className="relative">
+                <FaUser className="absolute left-4 top-4 text-gray-400 text-xs" />
+                <input
+                  type="text"
+                  placeholder="Last Name"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
+                />
+              </div>
+            </div>
 
-          {/* Submit Action Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-blue-600 text-white rounded-2xl font-bold text-xs tracking-wide shadow-lg shadow-blue-500/10 hover:bg-blue-700 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <FaUserPlus />
-            {loading ? "Registering Credentials..." : "Generate Master Account"}
-          </button>
-        </form>
+            {/* Email Address */}
+            <div className="relative">
+              <FaEnvelope className="absolute left-4 top-4 text-gray-400 text-xs" />
+              <input
+                type="email"
+                required
+                placeholder="Valid Email Address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
+              />
+            </div>
 
-        {/* Dynamic Route Switcher Footer */}
+            {/* Password with Strength Meter */}
+            <div className="space-y-1.5">
+              <div className="relative">
+                <FaLock className="absolute left-4 top-4 text-gray-400 text-xs" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  placeholder="Choose Secure Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-11 pr-11 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-3.5 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {showPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
+                </button>
+              </div>
+
+              {password && (
+                <div className="space-y-1 pt-1">
+                  <div className="flex h-1.5 w-full bg-gray-100 rounded-full overflow-hidden gap-1">
+                    <div className={`h-full flex-1 transition-all duration-300 ${strength >= 1 ? strengthInfo.color : 'bg-gray-200'}`}></div>
+                    <div className={`h-full flex-1 transition-all duration-300 ${strength >= 2 ? strengthInfo.color : 'bg-gray-200'}`}></div>
+                    <div className={`h-full flex-1 transition-all duration-300 ${strength >= 3 ? strengthInfo.color : 'bg-gray-200'}`}></div>
+                    <div className={`h-full flex-1 transition-all duration-300 ${strength >= 4 ? strengthInfo.color : 'bg-gray-200'}`}></div>
+                  </div>
+                  <p className={`text-[10px] font-bold text-right ${strengthInfo.textCol}`}>
+                    {strengthInfo.text}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Confirm Password Field */}
+            <div className="relative">
+              <FaLock className="absolute left-4 top-4 text-gray-400 text-xs" />
+              <input
+                type={showConfirmPassword ? "text" : "password"}
+                required
+                placeholder="Confirm Chosen Password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full pl-11 pr-11 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-4 top-3.5 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                {showConfirmPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
+              </button>
+              {confirmPassword && password === confirmPassword && (
+                <FaCheck className="absolute right-10 top-3.5 text-emerald-500 text-xs" />
+              )}
+            </div>
+
+            {/* Submit Action Button */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-blue-600 text-white rounded-2xl font-bold text-xs tracking-wide shadow-lg shadow-blue-500/10 hover:bg-blue-700 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <FaUserPlus />
+              {loading ? "Registering Credentials..." : "Create Account & Send OTP"}
+            </button>
+          </form>
+        )}
+
+        {/* ================= STEP 2: 6-DIGIT OTP ENTRY FORM ================= */}
+        {step === 2 && (
+          <form onSubmit={handleOtpSubmit} className="space-y-4">
+            <div className="relative">
+              <FaKey className="absolute left-4 top-4 text-gray-400 text-xs" />
+              <input
+                type="text"
+                required
+                maxLength={6}
+                placeholder="Enter 6-Digit OTP Code"
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value)}
+                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-center text-sm font-black tracking-widest placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-emerald-600 text-white rounded-2xl font-bold text-xs tracking-wide shadow-lg shadow-emerald-500/10 hover:bg-emerald-700 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <FaCheck />
+              {loading ? "Verifying Code..." : "Verify OTP & Activate Account"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setStep(1); setError(""); }}
+              className="w-full py-2.5 text-gray-400 font-bold text-xs hover:text-gray-600 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <FaArrowLeft /> Back to Registration
+            </button>
+          </form>
+        )}
+
+        {/* Switch Route Footer */}
         <div className="text-center pt-2 border-t border-gray-50 text-xs font-semibold text-gray-400">
           Already have an account?{" "}
           <button

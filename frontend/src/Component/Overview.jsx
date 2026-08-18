@@ -1,22 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { Doughnut, Line, Bar } from 'react-chartjs-2';
 import TransactionModal from "./TransactionModal";
-import { Link } from 'react-router-dom';
 import { categoryAPI, accountAPI, analyticsAPI, budgetAPI, transactionAPI } from "../API/index";
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
   BarElement, ArcElement, Title, Tooltip, Legend, Filler
 } from 'chart.js';
-import { FaPlus, FaMinus, FaArrowUp, FaArrowDown, FaBell, FaTag } from 'react-icons/fa';
-// 🚀 PRODUCTION ACCESS: Imports your unified category element icon helper resource
-import { getCategoryIconSource } from '../utils/icon';
+import { FaPlus, FaMinus, FaWallet } from 'react-icons/fa';
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, LineElement, BarElement,
   ArcElement, Title, Tooltip, Legend, Filler
 );
 
-const avatarUrl = "https://api.dicebear.com/7.x/identicon/svg?seed=dashboard";
+const formatAxisNumber = (value) => {
+  if (value >= 1000000 || value <= -1000000) return (value / 1000000).toFixed(1) + 'M';
+  if (value >= 1000 || value <= -1000) return (value / 1000).toFixed(1) + 'k';
+  return value.toLocaleString();
+};
+
+const getAccountTypeLabel = (acc) => {
+  const type = String(acc.account_type || '').toLowerCase();
+  if (type.includes('credit')) return "Credit Card";
+  if (type.includes('savings')) return "Savings Account";
+  if (type.includes('checking')) return "Checking Account";
+  if (type.includes('loan')) return "Loan Account";
+  return "Standard Account";
+};
 
 const Overview = () => {
   const [showForm, setShowForm] = useState(null);
@@ -24,15 +34,29 @@ const Overview = () => {
   const [accounts, setAccounts] = useState([]);
   const [budgets, setBudgets] = useState([]);
   const [transactions, setTransactions] = useState([]);
-  const [criticalAlerts, setCriticalAlerts] = useState([]);
 
-  // Core Operational Metrics States
-  const [dashboardMetrics, setDashboardMetrics] = useState({ balance: 0.00, creditCards: 0.00, netWorth: 0.00 });
-  const [performance, setPerformance] = useState({ current_month_spent: 0, last_month_spent: 0, current_progress: 0, last_progress: 0 });
+  // Global Currency Toggle State ("USD" or "KHR")
+  const [globalCurrency, setGlobalCurrency] = useState("USD");
+
+  // Multi-Currency Dashboard Metrics
+  const [dashboardMetrics, setDashboardMetrics] = useState({
+    liquidUSD: 0, liquidKHR: 0,
+    debtUSD: 0, debtKHR: 0,
+    creditCardDebtUSD: 0,
+    cashFlowUSD: 0, cashFlowKHR: 0,
+    netWorthUSD: 0, netWorthKHR: 0
+  });
+
+  // Monthly Breakdown State
+  const [monthlyBreakdown, setMonthlyBreakdown] = useState({
+    incomeUSD: 0, spentUSD: 0,
+    incomeKHR: 0, spentKHR: 0,
+    progressUSD: 0, progressKHR: 0
+  });
+
   const [weeklySpending, setWeeklySpending] = useState([]);
   const [trendHistory, setTrendHistory] = useState([]);
 
-  // --- CRUD: READ SYNC ---
   const fetchInitialData = async () => {
     try {
       const [catRes, accRes, analyticsRes, budgetRes, txRes] = await Promise.all([
@@ -43,385 +67,449 @@ const Overview = () => {
         transactionAPI.getAll()
       ]);
 
-      const rawCategories = Array.isArray(catRes.data) ? catRes.data : [];
-      const rawAccounts = Array.isArray(accRes.data) ? accRes.data : [];
-      const rawBudgets = Array.isArray(budgetRes.data) ? budgetRes.data : [];
-
-      setCategories(rawCategories);
-      setAccounts(rawAccounts);
-      setBudgets(rawBudgets);
+      setCategories(Array.isArray(catRes.data) ? catRes.data : []);
+      setAccounts(Array.isArray(accRes.data) ? accRes.data : []);
+      setBudgets(Array.isArray(budgetRes.data) ? budgetRes.data : []);
       setTransactions(Array.isArray(txRes.data) ? txRes.data : []);
-
-      // Intercept active warnings sent down from backend calculations
-      const compiledAlerts = [];
-      rawBudgets.forEach(b => {
-        if (b.alert_message && b.status !== 'green') {
-          compiledAlerts.push({
-            id: b.id,
-            name: b.name,
-            msg: b.alert_message,
-            status: b.status,
-            type: b.strategy_type
-          });
-        }
-      });
-      setCriticalAlerts(compiledAlerts);
-
-      let calculatedBalance = 0;
-      let calculatedCredit = 0;
-
-      rawAccounts.forEach(acc => {
-        const balanceVal = parseFloat(acc.balance) || 0;
-        const typeStr = acc.account_type ? String(acc.account_type).toLowerCase().trim() : "";
-
-        if (typeStr.includes("credit") || typeStr.includes("card") || typeStr.includes("loan")) {
-          calculatedCredit += balanceVal;
-        } else {
-          calculatedBalance += balanceVal;
-        }
-      });
-
-      setDashboardMetrics({
-        balance: calculatedBalance,
-        creditCards: calculatedCredit,
-        netWorth: calculatedBalance + calculatedCredit
-      });
 
       if (analyticsRes && analyticsRes.data) {
         const data = analyticsRes.data;
-        setPerformance({
-          current_month_spent: data.monthly_performance?.current_month_spent || 0,
-          last_month_spent: data.monthly_performance?.last_month_spent || 0,
-          current_progress: data.monthly_performance?.current_progress_percentage || 0,
-          last_progress: data.monthly_performance?.last_progress_percentage || 0
+        const metrics = data.metrics || {};
+        const summary = data.summary || {};
+        const perf = data.monthly_performance || {};
+
+        const incUSD = Number(summary.total_income_usd ?? perf.current_month_income ?? 0);
+        const expUSD = Number(summary.total_expenses_usd ?? perf.current_month_spent ?? 0);
+        const incKHR = Number(summary.total_income_khr ?? perf.current_month_income_khr ?? 0);
+        const expKHR = Number(summary.total_expenses_khr ?? perf.current_month_spent_khr ?? 0);
+
+        setDashboardMetrics({
+          liquidUSD: Number(metrics.balance_usd ?? 0),
+          liquidKHR: Number(metrics.balance_khr ?? 0),
+          debtUSD: Number(metrics.totalDebt_usd ?? 0),
+          debtKHR: Number(metrics.totalDebt_khr ?? 0),
+          creditCardDebtUSD: Number(metrics.creditCards_usd ?? 0),
+          cashFlowUSD: incUSD - expUSD,
+          cashFlowKHR: incKHR - expKHR,
+          netWorthUSD: Number(metrics.netWorth_usd ?? 0),
+          netWorthKHR: Number(metrics.netWorth_khr ?? 0)
         });
+
+        setMonthlyBreakdown({
+          incomeUSD: incUSD,
+          spentUSD: expUSD,
+          incomeKHR: incKHR,
+          spentKHR: expKHR,
+          progressUSD: Number(perf.current_progress_percentage ?? 0),
+          progressKHR: Number(perf.current_progress_percentage_khr ?? 0)
+        });
+
         setWeeklySpending(Array.isArray(data.weekly_spending) ? data.weekly_spending : []);
         setTrendHistory(Array.isArray(data.trend_history) ? data.trend_history : []);
       }
     } catch (error) {
-      console.error("Axios dashboard calculation engine sync crash:", error);
+      console.error("Dashboard sync failure:", error);
     }
   };
 
   useEffect(() => {
     fetchInitialData();
-  }, []);
+  }, [globalCurrency]);
 
   const closeModal = () => setShowForm(null);
 
-  const safeWeekly = Array.isArray(weeklySpending) ? weeklySpending : [];
-  const safeTrend = Array.isArray(trendHistory) ? trendHistory : [];
-  const safeBudgets = Array.isArray(budgets) ? budgets : [];
-  const safeAccounts = Array.isArray(accounts) ? accounts : [];
+  const formatNativeMoney = (val, currencyCode) => {
+    const isKHR = String(currencyCode).toUpperCase().trim() === "KHR";
+    const symbol = isKHR ? "៛" : "$";
+    const num = Math.abs(val || 0);
+    const formatted = isKHR
+      ? num.toLocaleString(undefined, { maximumFractionDigits: 0 })
+      : num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // --- Chart Configurations ---
-  const monthChartData = (progress) => ({
-    labels: ['Spent', 'Available Liquidity'],
-    datasets: [{
-      data: [progress, Math.max(100 - progress, 0)],
-      backgroundColor: ['#DC2626', '#16A34A'],
-      borderWidth: 0,
-      cutout: '75%',
-    }],
-  });
+    return `${val < 0 ? '-' : ''}${symbol}${formatted}`;
+  };
+
+  const formatMoney = (val, currency = "USD", forceNegative = false) => {
+    const isKHR = String(currency).toUpperCase().trim() === "KHR";
+    const symbol = isKHR ? "៛" : "$";
+    const num = Math.abs(val || 0);
+    const isNeg = forceNegative || val < 0;
+    const formatted = isKHR
+      ? num.toLocaleString(undefined, { maximumFractionDigits: 0 })
+      : num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    return `${isNeg && num !== 0 ? '-' : ''}${symbol}${formatted}`;
+  };
+
+  const monthChartData = (progress) => {
+    const safeProgress = Math.min(Math.max(progress, 5), 95);
+    return {
+      labels: ['Expense', 'Remaining'],
+      datasets: [{
+        data: [safeProgress, 100 - safeProgress],
+        backgroundColor: ['#E50914', '#009A00'],
+        borderWidth: 2,
+        borderColor: '#ffffff',
+        cutout: '62%',
+      }],
+    };
+  };
 
   const monthChartOptions = {
-    plugins: { legend: { display: false } },
+    plugins: { legend: { display: false }, tooltip: { enabled: false } },
     maintainAspectRatio: false,
     responsive: true,
   };
 
   const trendLineData = {
-    labels: safeTrend.length > 0 ? safeTrend.map(t => t.label) : ["...", "...", "...", "...", "...", "..."],
+    labels: trendHistory.length > 0 ? trendHistory.map(t => t.label) : ["Nov", "Dec", "Jan", "Feb"],
     datasets: [{
       label: 'Net Worth Trajectory',
-      data: safeTrend.length > 0 ? safeTrend.map(t => t.net_worth) : [0, 0, 0, 0, 0, 0],
+      data: trendHistory.length > 0
+        ? trendHistory.map(t => globalCurrency === "KHR" ? t.net_worth_khr : t.net_worth_usd)
+        : [1000, 1000, 1000, 995],
       fill: true,
-      backgroundColor: 'rgba(37, 99, 235, 0.06)',
-      borderColor: '#2563EB',
-      tension: 0.4,
-      pointRadius: safeTrend.length > 0 ? 4 : 0,
-      pointBackgroundColor: '#2563EB',
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      borderColor: '#3B82F6',
+      tension: 0,
+      borderWidth: 2,
+      pointRadius: 4,
+      pointBackgroundColor: '#3B82F6',
     }],
   };
 
   const trendLineOptions = {
     plugins: { legend: { display: false } },
     scales: {
-      y: { ticks: { callback: (value) => `$${value}` }, grid: { borderDash: [2, 2] } },
-      x: { grid: { display: false } },
+      y: {
+        ticks: {
+          callback: (value) => `${globalCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
+          font: { size: 10, weight: '600' },
+          color: '#4B5563'
+        },
+        grid: { color: '#E5E7EB', borderDash: [4, 4], drawBorder: false }
+      },
+      x: {
+        grid: { display: false, drawBorder: false },
+        ticks: { maxRotation: 0, font: { size: 10, weight: '600' }, color: '#4B5563' }
+      },
     },
     maintainAspectRatio: false,
     responsive: true,
   };
 
   const weeklyBarData = {
-    labels: safeWeekly.length > 0 ? safeWeekly.map(w => w.label) : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    labels: weeklySpending.length > 0 ? weeklySpending.map(w => w.label) : ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"],
     datasets: [{
-      label: 'Expenses ($)',
-      data: safeWeekly.length > 0 ? safeWeekly.map(w => w.amount) : [0, 0, 0, 0, 0, 0, 0],
-      backgroundColor: '#DC2626',
-      borderRadius: 6,
-      barThickness: 14,
+      label: 'Expenses',
+      data: weeklySpending.length > 0
+        ? weeklySpending.map(w => Math.abs(globalCurrency === "KHR" ? w.amount_khr : w.amount_usd))
+        : [0, 0, 0, 0, 0, 0, 5],
+      backgroundColor: '#E50914',
+      borderRadius: 0,
+      barThickness: 16,
     }],
   };
 
   const weeklyBarOptions = {
     plugins: { legend: { display: false } },
     scales: {
-      y: { ticks: { callback: (value) => `$${value}` }, grid: { borderDash: [2, 2] } },
-      x: { grid: { display: false } },
+      y: {
+        beginAtZero: true,
+        ticks: {
+          callback: (value) => `${globalCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
+          font: { size: 9 },
+          color: '#4B5563'
+        },
+        grid: { color: '#D1D5DB', borderDash: [3, 3], drawBorder: false }
+      },
+      x: {
+        grid: { display: false, drawBorder: false },
+        ticks: { maxRotation: 0, font: { size: 9 }, color: '#4B5563' }
+      },
     },
     maintainAspectRatio: false,
     responsive: true,
   };
 
-  const BudgetRow = ({ progress, label, date, amount, total, strategyType }) => (
-    <div className="flex items-center gap-4 py-3 border-b border-gray-50 last:border-0 group">
-      <img src={avatarUrl} alt={label} className="w-10 h-10 rounded-full flex-shrink-0" />
-      <div className="flex-1 space-y-1">
-        <div className="flex justify-between items-baseline">
-          <span className="font-semibold text-gray-800 text-xs flex items-center gap-1.5">
-            {label}
-            {strategyType === "fixed_allocation" && <span className="bg-amber-50 text-amber-700 text-[8px] font-black uppercase px-1.5 py-0.2 rounded border border-amber-200/40">Fixed Bill</span>}
-          </span>
-          <span className="text-gray-400 text-[10px]">{date}</span>
-        </div>
-        <div className="w-full h-1.5 bg-gray-100 rounded-full relative overflow-hidden shadow-inner">
-          <div style={{ width: `${Math.min(progress, 100)}%` }} className={`absolute inset-0 rounded-full ${progress >= 100 ? 'bg-red-500 animate-pulse' : progress >= 75 ? 'bg-amber-400' : 'bg-green-500'}`}></div>
-        </div>
-        <div className="flex justify-between items-baseline text-[10px] font-medium">
-          <span className="text-gray-500">Spent: <b>${amount.toFixed(2)}</b></span>
-          <span className="text-gray-400">Cap: <b>${total.toFixed(2)}</b></span>
-        </div>
-      </div>
-      <span className="text-[10px] font-black text-gray-500">{progress}%</span>
-    </div>
-  );
+  const creditLimitUSD = 150;
+
+  const cashFlowUSD = dashboardMetrics.cashFlowUSD;
+  const cashFlowKHR = dashboardMetrics.cashFlowKHR;
 
   return (
-    <div className="grid grid-cols-12 gap-5 min-h-screen bg-[#F8F9FD] p-10 font-sans relative w-full">
+    <div className="bg-[#E9ECEF] p-4 lg:p-6 pb-24 min-h-screen font-sans w-full">
 
-      {/* 1. Left Column Panel */}
-      <div className="col-span-12 lg:col-span-3 space-y-5">
-
-        {/* 🚀 FIXED: Polished look with perfect vertical layout blocks */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
-          <h2 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Summary</h2>
-
-          <div className="flex flex-col gap-1 border-b border-gray-50 pb-3">
-            <span className="font-bold text-gray-400 text-[11px] uppercase tracking-wider">Available Capital</span>
-            <span className="font-black text-green-600 text-2xl">$ {dashboardMetrics.balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-          </div>
-
-          <div className="flex flex-col gap-1 border-b border-gray-50 pb-3">
-            <span className="font-bold text-gray-400 text-[11px] uppercase tracking-wider">Credit Liabilities</span>
-            <span className="font-black text-red-500 text-lg">$ {Math.abs(dashboardMetrics.creditCards).toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-          </div>
-
-          <div className="flex flex-col gap-1 pt-1">
-            <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">True Net Worth</span>
-            <span className={`text-2xl font-black tracking-tight ${dashboardMetrics.netWorth >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
-              $ {dashboardMetrics.netWorth.toLocaleString(undefined, {minimumFractionDigits: 2})}
-            </span>
-          </div>
-        </div>
-
-        {/* Live Accounts Panel */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 relative">
-          <h2 className="text-xs font-black text-gray-400 mb-5 uppercase tracking-widest">Accounts Balance</h2>
-          <div className="space-y-4">
-            {safeAccounts.length === 0 ? (
-              <div className="text-xs text-gray-400 italic py-2">No linked accounts setup.</div>
-            ) : (
-              safeAccounts.map(acc => (
-                <div key={acc.id} className="flex justify-between items-center border-b border-gray-50 pb-2 last:border-0 last:pb-0">
-                  <span className="font-bold text-gray-700 capitalize text-sm">{acc.account_name || acc.name}</span>
-                  <div className="text-right">
-                    <span className={`font-black text-sm ${parseFloat(acc.balance) >= 0 ? 'text-gray-800' : 'text-red-500'}`}>
-                      $ {parseFloat(acc.balance || 0).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Rolling Weekly Spend Panel */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-          <h2 className="text-xs font-black text-gray-400 mb-4 uppercase tracking-widest">Weekly Spend Timeline</h2>
-          <div className="w-full h-48 relative">
-            <Bar data={weeklyBarData} options={weeklyBarOptions} />
-          </div>
+      {/* Currency Switcher */}
+      <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
+        <div className="bg-white p-1 rounded-lg shadow-sm border border-gray-200 flex">
+          <button onClick={() => setGlobalCurrency("USD")} className={`px-3 py-1 rounded-md text-xs font-bold cursor-pointer ${globalCurrency === "USD" ? 'bg-gray-100 text-gray-800' : 'text-gray-400'}`}>USD</button>
+          <button onClick={() => setGlobalCurrency("KHR")} className={`px-3 py-1 rounded-md text-xs font-bold cursor-pointer ${globalCurrency === "KHR" ? 'bg-gray-100 text-gray-800' : 'text-gray-400'}`}>KHR</button>
         </div>
       </div>
 
-      {/* 2. Graphical Performance Center Dashboard */}
-      <div className="col-span-12 lg:col-span-9 space-y-5">
+      <div className="max-w-[1400px] mx-auto grid grid-cols-12 gap-5">
 
-        {/* Real-time System Strategic Exception Warnings Banner Block */}
-        {criticalAlerts.length > 0 && (
-          <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 space-y-3 animate-in fade-in duration-150">
-            <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-              <FaBell className="text-amber-500 animate-bounce" /> Strategic Exceptions Engine
-            </h3>
-            <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
-              {criticalAlerts.map(alert => (
-                <div key={alert.id} className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-3 shadow-xs ${
-                  alert.status === 'red' ? 'bg-red-50 border-red-100 text-red-700' : 'bg-amber-50 border-amber-100 text-amber-700'
-                }`}>
-                  <span>⚠️</span>
-                  <p className="flex-1 leading-relaxed">
-                    <span className="uppercase font-black mr-1 bg-white/60 px-1 py-0.5 rounded border border-black/5">{alert.name}:</span>
-                    {alert.msg}
-                  </p>
+        {/* ================= LEFT COLUMN ================= */}
+        <div className="col-span-12 lg:col-span-4 space-y-5">
+
+          {/* 1. Summary Card */}
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+            <h2 className="text-[15px] font-bold text-gray-900 mb-3">Summary</h2>
+            <div className="space-y-3">
+
+              {/* Liquid Assets */}
+              <div>
+                <span className="text-gray-600 font-medium text-[13px] block mb-1">Liquid Assets</span>
+                <div className="flex justify-between items-center text-[13px] font-bold text-[#009A00]">
+                  <span>{formatNativeMoney(dashboardMetrics.liquidUSD, "USD")}</span>
+                  <span>{formatNativeMoney(dashboardMetrics.liquidKHR, "KHR")}</span>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {/* Current Month Doughnut */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center justify-between">
-            <div className="space-y-1">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Spent This Month</h3>
-              <div className="text-2xl font-black text-red-500">$ {performance.current_month_spent.toFixed(2)}</div>
-            </div>
-            <div className="w-20 h-20 relative">
-              <Doughnut data={monthChartData(performance.current_progress)} options={monthChartOptions} />
-            </div>
-          </div>
-
-          {/* Last Month Doughnut */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center justify-between">
-            <div className="space-y-1">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Spent Last Month</h3>
-              <div className="text-2xl font-black text-gray-700">$ {performance.last_month_spent.toFixed(2)}</div>
-            </div>
-            <div className="w-20 h-20 relative">
-              <Doughnut data={monthChartData(performance.last_progress)} options={monthChartOptions} />
-            </div>
-          </div>
-        </div>
-
-        {/* Timeline Asset Trajectory Line Graph */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 h-64">
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Net Worth Capital Trend</h3>
-          <div className="w-full h-52">
-            <Line data={trendLineData} options={trendLineOptions} />
-          </div>
-        </div>
-
-        {/* RECENT TRANSACTIONS LEDGER SNIP-FEED */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
-          <div className="flex justify-between items-center pb-2 border-b border-gray-50">
-            <div className="space-y-0.5">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Recent Activity Ledger</h3>
-              <p className="text-[10px] text-gray-400 font-medium">Real-time chronologically sorted income and expense ledger audit</p>
-            </div>
-            <Link
-              to="/transaction"
-              className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1"
-            >
-              View Full Ledger →
-            </Link>
-          </div>
-
-          <div className="divide-y divide-gray-50">
-            {transactions.length === 0 ? (
-              <div className="text-xs text-gray-400 italic py-4 text-center">
-                No systemic records found inside PostgreSQL database history ledger logs.
               </div>
-            ) : (
-              transactions
-                // 🚀 FIXED: Filters out "Opening Balance Baseline" rows dynamically from list views
-                .filter(tx => String(tx.description).trim() !== "Opening Balance Baseline")
-                .slice(0, 5)
-                .map((tx) => {
-                  const isExpense = String(tx.type || "").toLowerCase().trim() === 'expense';
-                  const amountVal = parseFloat(tx.amount || 0);
 
-                  // 🚀 FIXED: Resolves actual object structures or matches category fallback options natively
-                  const matchedCategory = tx.category || categories.find(c => c.id === tx.category_id);
-                  const displayHeader = matchedCategory ? matchedCategory.name : (isExpense ? "Direct Expense" : "Treasury Income");
-                  const iconSrc = matchedCategory ? getCategoryIconSource(matchedCategory) : null;
+              {/* Total Debt */}
+              <div>
+                <span className="text-gray-600 font-medium text-[13px] block mb-1">Total Debt</span>
+                <div className="flex justify-between items-center text-[13px] font-bold text-[#E50914]">
+                  <span>{formatNativeMoney(-Math.abs(dashboardMetrics.debtUSD), "USD")}</span>
+                  {dashboardMetrics.debtKHR > 0 && <span>{formatNativeMoney(-Math.abs(dashboardMetrics.debtKHR), "KHR")}</span>}
+                </div>
+              </div>
+
+              {/* Total Cash Flow (Net Income - Expense) */}
+              <div className="pb-3 border-b border-gray-300">
+                <span className="text-gray-600 font-medium text-[13px] block mb-1">Total Cash Flow</span>
+                <div className="flex justify-between items-center text-[13px] font-bold">
+                  <span className={cashFlowUSD >= 0 ? "text-[#009A00]" : "text-[#E50914]"}>
+                    {formatNativeMoney(cashFlowUSD, "USD")}
+                  </span>
+                  <span className={cashFlowKHR >= 0 ? "text-[#009A00]" : "text-[#E50914]"}>
+                    {formatNativeMoney(cashFlowKHR, "KHR")}
+                  </span>
+                </div>
+              </div>
+
+              {/* Net Worth */}
+              <div className="pt-1 flex justify-between items-center">
+                <span className="text-gray-900 font-bold text-sm">Net Worth</span>
+                <span className="font-bold text-[#009A00] text-sm tracking-wide">
+                  {formatNativeMoney(globalCurrency === "KHR" ? dashboardMetrics.netWorthKHR : dashboardMetrics.netWorthUSD, globalCurrency)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Accounts Card (Clean Negative Sign Fix for Loans) */}
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4">
+            <div className="flex justify-between items-center mb-1">
+              <h2 className="text-[15px] font-bold text-gray-900">Accounts</h2>
+              <span className="text-gray-400 font-black cursor-pointer text-lg leading-none">⋮</span>
+            </div>
+
+            {accounts.filter(a => a.is_active !== false && !String(a.account_type || '').toLowerCase().includes('credit')).length === 0 ? (
+              <div className="text-xs text-gray-400 italic py-2">No linked accounts.</div>
+            ) : (
+              accounts
+                .filter(a => a.is_active !== false && !String(a.account_type || '').toLowerCase().includes('credit'))
+                .slice(0, 5)
+                .map((acc, idx) => {
+                  const rawBal = Number(acc.balance) || 0;
+                  const accCurrency = String(acc.currency || "USD").toUpperCase().trim();
+                  const typeStr = String(acc.account_type || '').toLowerCase();
+                  const isLoan = typeStr.includes("loan") || typeStr.includes("mortgage") || rawBal < 0;
 
                   return (
-                    <div key={tx.id} className="flex items-center justify-between py-3.5 hover:bg-gray-50/50 px-2 rounded-xl transition-all duration-150">
-                      <div className="flex items-center gap-3 truncate max-w-[70%]">
-
-                        {/* 🚀 FIXED: Real-time icon reader container matching analytics panel views */}
-                        <div className="w-8 h-8 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center flex-shrink-0 text-xs overflow-hidden">
-                          {iconSrc ? (
-                            <img src={iconSrc} alt="Icon" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className={isExpense ? 'text-red-500' : 'text-green-500'}><FaTag size={10} /></div>
-                          )}
-                        </div>
-
-                        <div className="truncate">
-                          {/* 🚀 FIXED: Displays the Category Name here as the bold line header */}
-                          <h4 className="text-xs font-black text-gray-800 capitalize truncate">
-                            {displayHeader}
-                          </h4>
-                          {/* Places account metadata and description string underneath as subtext */}
-                          <span className="text-[10px] font-bold text-gray-400 tracking-wide block truncate">
-                            {tx.account_name || "Ledger Account"} {tx.description ? `• ${tx.description}` : ""}
-                          </span>
-                        </div>
+                    <div key={acc.id} className={`flex justify-between items-start ${idx !== 0 ? 'pt-3' : ''} border-b border-gray-100 last:border-0 pb-3`}>
+                      <span className="font-medium text-gray-800 text-[13px] capitalize">{acc.account_name || acc.name}</span>
+                      <div className="text-right leading-tight">
+                        <span className={`font-bold text-[13px] block ${isLoan ? 'text-[#E50914]' : 'text-[#009A00]'}`}>
+                          {formatMoney(Math.abs(rawBal), accCurrency, isLoan)}
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-medium capitalize block">
+                          {getAccountTypeLabel(acc)} ({accCurrency})
+                        </span>
                       </div>
-                      <span className={`text-xs font-black tracking-wide ${
-                        isExpense ? 'text-red-600' : 'text-green-600'
-                      }`}>
-                        {isExpense ? '-' : '+'}${amountVal.toFixed(2)}
-                      </span>
                     </div>
                   );
                 })
             )}
           </div>
+
+          {/* 3. Credit Card Utilization Card */}
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-3">
+            <div className="flex justify-between items-start">
+              <div className="leading-tight">
+                <span className="font-bold text-gray-900 text-[13px] block">Credit Card Utilization</span>
+                <span className="text-[11px] text-gray-500 font-medium">
+                  {formatMoney(dashboardMetrics.creditCardDebtUSD, "USD")} / {formatMoney(creditLimitUSD, "USD")} Limit
+                </span>
+              </div>
+              <span className="font-bold text-[#E50914] text-[13px]">{formatMoney(dashboardMetrics.creditCardDebtUSD, "USD")}</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-2 bg-gray-200 overflow-hidden rounded-full">
+                <div
+                  style={{ width: `${Math.min((dashboardMetrics.creditCardDebtUSD / creditLimitUSD) * 100, 100)}%` }}
+                  className="h-full bg-[#E50914]"
+                />
+              </div>
+              <span className="text-xs font-bold text-gray-800">
+                {Math.round((dashboardMetrics.creditCardDebtUSD / creditLimitUSD) * 100)}%
+              </span>
+            </div>
+          </div>
+
+          {/* 4. Weekly Bar Chart Card */}
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-2">
+            <h2 className="text-[11px] font-bold text-gray-800">Weekly Spending (Last 7 Days)</h2>
+            <div className="h-56 w-full pt-2">
+              <Bar data={weeklyBarData} options={weeklyBarOptions} />
+            </div>
+          </div>
+
         </div>
 
-        {/* LIVE BUDGET ROWS SYNCED LOOP */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-          <h2 className="text-sm font-bold text-gray-800 mb-4 uppercase tracking-wider">Active Budgets Threshold</h2>
-          <div className="divide-y divide-gray-50">
-            {safeBudgets.length === 0 ? (
-              <div className="text-xs text-gray-400 italic py-6 text-center">
-                No active budget boundaries set up. Click the budgets tab to assign a threshold rule pool!
+        {/* ================= RIGHT COLUMN ================= */}
+        <div className="col-span-12 lg:col-span-8 space-y-5">
+
+          {/* 1. Top Row Doughnuts (Includes explicit KHR Expense rendering) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+            {/* This Month Card */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
+              <div className="w-24 h-24 relative flex items-center justify-center">
+                <Doughnut data={monthChartData(monthlyBreakdown.progressUSD)} options={monthChartOptions} />
               </div>
-            ) : (
-              safeBudgets.map((item) => (
-                <BudgetRow
-                  key={item.id}
-                  progress={item.progress || 0}
-                  label={item.name}
-                  date={`${item.start || "—"} - ${item.end || "—"}`}
-                  amount={item.spent || item.current || 0}
-                  total={item.total || 0}
-                  strategyType={item.strategy_type}
-                />
-              ))
-            )}
+              <div className="flex-1 text-right pl-4 space-y-1.5">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[13px] font-bold text-gray-900">This Month</span>
+                  <div className="flex flex-col text-[8px] text-[#009A00] font-bold">
+                    <span>▲</span>
+                    <span className="text-[#E50914]">▼</span>
+                  </div>
+                </div>
+
+                {/* USD Breakdown */}
+                {monthlyBreakdown.incomeUSD > 0 && (
+                  <div className="font-bold text-[#009A00] text-[13px]">{formatMoney(monthlyBreakdown.incomeUSD, "USD")}</div>
+                )}
+                {monthlyBreakdown.spentUSD > 0 && (
+                  <div className="font-bold text-[#E50914] text-[13px] pb-1 border-b border-gray-200">
+                    {formatMoney(monthlyBreakdown.spentUSD, "USD", true)}
+                  </div>
+                )}
+
+                {/* KHR Breakdown */}
+                {monthlyBreakdown.incomeKHR > 0 && (
+                  <div className="font-bold text-[#009A00] text-[13px]">{formatMoney(monthlyBreakdown.incomeKHR, "KHR")}</div>
+                )}
+                {monthlyBreakdown.spentKHR > 0 && (
+                  <div className="font-bold text-[#E50914] text-[13px] pb-1 border-b border-gray-200">
+                    {formatMoney(monthlyBreakdown.spentKHR, "KHR", true)}
+                  </div>
+                )}
+
+                {/* Net Flow Summary */}
+                <div className={`pt-1 font-bold text-[13px] tracking-wide ${cashFlowUSD >= 0 ? "text-[#009A00]" : "text-[#E50914]"}`}>
+                  {formatMoney(cashFlowUSD, "USD")}
+                </div>
+              </div>
+            </div>
+
+            {/* Last Month Card */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
+              <div className="w-24 h-24 relative flex items-center justify-center">
+                <Doughnut data={monthChartData(0)} options={monthChartOptions} />
+              </div>
+              <div className="flex-1 text-right pl-4 space-y-1.5">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[13px] font-bold text-gray-900">Last Month</span>
+                </div>
+                <div className="font-bold text-[#009A00] text-[13px]">$0.00</div>
+                <div className="font-bold text-[#E50914] text-[13px] pb-2 border-b border-gray-300">$0.00</div>
+                <div className="pt-1 font-bold text-[#009A00] text-[13px] tracking-wide">$0.00</div>
+              </div>
+            </div>
+
           </div>
+
+          {/* 2. Middle Row Line Chart */}
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-2">
+            <h3 className="text-center text-[11px] font-bold text-gray-800">Net Worth Trajectory (6 Months)</h3>
+            <div className="h-56 w-full">
+              <Line data={trendLineData} options={trendLineOptions} />
+            </div>
+          </div>
+
+          {/* 3. Bottom Row Budgets Card */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-5">
+            <h3 className="text-[13px] font-bold text-gray-900">Active Budgets</h3>
+            <div className="space-y-5">
+              {budgets.length === 0 ? (
+                <div className="text-xs text-gray-400 italic text-center py-2">No active budgets configured.</div>
+              ) : (
+                budgets.slice(0, 5).map((item, idx) => {
+                  const spentVal = Number(item.spent ?? item.spent_amount ?? 0);
+                  const capVal = Number(item.total ?? item.budget_limit ?? item.cap ?? 0);
+                  const isExpired = item.end && new Date(item.end) < new Date();
+                  const pct = item.progress || (capVal > 0 ? Math.round((spentVal / capVal) * 100) : 0);
+
+                  return (
+                    <div key={item.id || idx} className="flex items-center gap-4 text-xs">
+                      <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                        <FaWallet />
+                      </div>
+                      <div className="flex-1 space-y-1.5">
+
+                        <div className="flex justify-between items-end">
+                          <div className="leading-tight flex items-center gap-2">
+                            <span className="font-bold text-gray-800 text-[12px] block">{item.name || item.category_name || "Budget Strategy"}</span>
+                            {isExpired && (
+                              <span className="bg-red-100 text-red-600 text-[8px] font-bold px-1.5 py-0.5 rounded">Expired</span>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-gray-600 font-bold block">{pct}%</span>
+                          </div>
+                        </div>
+
+                        <div className="w-full h-2 bg-gray-100 overflow-hidden flex items-center rounded-full">
+                          <div
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                            className={`h-full ${pct > 100 ? 'bg-red-500' : 'bg-emerald-500'}`}
+                          />
+                        </div>
+
+                        <div className="flex justify-between items-center text-[10px] font-semibold text-gray-500">
+                          <span>Spent: <strong className="text-gray-800">{formatMoney(spentVal, "USD")}</strong></span>
+                          <span>Cap: <strong className="text-gray-800">{formatMoney(capVal, "USD")}</strong></span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
         </div>
+
       </div>
 
-      {/* Fast Action Launcher Buttons */}
-      <div className="fixed bottom-8 right-8 flex flex-col gap-3 z-[100]">
+      {/* Floating Action Buttons */}
+      <div className="fixed bottom-6 right-6 flex flex-col gap-2 z-[100]">
         <button
           type="button"
           onClick={() => setShowForm("income")}
-          className="w-14 h-14 bg-[#2ECC71] text-white rounded-full flex items-center justify-center text-xl shadow-xl hover:scale-110 active:scale-95 transition-all cursor-pointer"
+          className="w-10 h-10 bg-[#009A00] text-white rounded-full flex items-center justify-center text-sm shadow-md hover:scale-105 transition-all cursor-pointer"
         >
           <FaPlus />
         </button>
         <button
           type="button"
           onClick={() => setShowForm("expense")}
-          className="w-14 h-14 bg-[#FF0000] text-white rounded-full flex items-center justify-center text-xl shadow-xl hover:scale-110 active:scale-95 transition-all cursor-pointer"
+          className="w-10 h-10 bg-[#E50914] text-white rounded-full flex items-center justify-center text-sm shadow-md hover:scale-105 transition-all cursor-pointer"
         >
           <FaMinus />
         </button>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FaCalendarAlt, FaWallet, FaPen, FaPlus, FaMinus, FaTag } from 'react-icons/fa';
-import { transactionAPI } from "../API/index"; // 💡 Ensure your budget API is imported here if separate
+import { transactionAPI } from "../API/index";
 import { getCategoryIconSource } from '../utils/icon';
 
 const TransactionModal = ({
@@ -8,25 +8,17 @@ const TransactionModal = ({
   categories = [],
   accounts = [],
   fetchInitialData,
-  onTransactionSuccess, // 🟢 Added notification synchronization hook
+  onTransactionSuccess,
   type = "expense",
   editData = null
 }) => {
   const resolvedType = typeof type === 'string' && type ? type.toLowerCase() : 'expense';
 
-  // State to hold the calculated savings target amount from the budget settings
   const [targetSavingsAmount, setTargetSavingsAmount] = useState("");
 
-  // 🎯 FETCH BUDGET DATA ON MOUNT
   useEffect(() => {
     const fetchBudgetTarget = async () => {
       try {
-        // Replace this with your actual budget API call if necessary
-        // const budgetData = await budgetAPI.getCurrentBudget();
-        // Assuming your backend calculates the 50/30/20 target for savings:
-        // setTargetSavingsAmount(String(budgetData.savings_target || 130.00));
-
-        // Hardcoded fallback matching your current calculated budget commitment rule
         setTargetSavingsAmount("130.00");
       } catch (error) {
         console.error("Failed to fetch budget guidelines:", error);
@@ -53,21 +45,16 @@ const TransactionModal = ({
   const safeAccounts = Array.isArray(accounts) ? accounts : [];
 
   const filteredAccountsForDropdown = useMemo(() => {
-    if (resolvedType === "income") {
-      return safeAccounts.filter(acc => {
-        const typeClean = String(acc.account_type || "").toLowerCase();
-        const nameClean = String(acc.account_name || "").toLowerCase();
-        return !typeClean.includes("credit") && !typeClean.includes("card") && !nameClean.includes("card") && !typeClean.includes("loan") && !nameClean.includes("loan");
-      });
-    }
     return safeAccounts;
-  }, [safeAccounts, resolvedType]);
+  }, [safeAccounts]);
 
   const [transactions, setTransactions] = useState([
     {
       amount: editData ? String(editData.amount) : "",
       category_id: editData ? String(editData.category_id) : "",
       account_id: editData ? String(editData.account_id) : (filteredAccountsForDropdown[0]?.id ? String(filteredAccountsForDropdown[0].id) : ""),
+      from_account_id: "",
+      interest_amount: "",
       transaction_date: editData ? editData.transaction_date : new Date().toISOString().split('T')[0],
       transaction_time: editData && editData.transaction_time ? editData.transaction_time : new Date().toTimeString().split(' ')[0].substring(0, 5),
       description: editData ? editData.description : ""
@@ -75,8 +62,19 @@ const TransactionModal = ({
   ]);
 
   const selectedAccount = safeAccounts.find(acc => String(acc.id) === String(transactions[0]?.account_id));
-  const accountType = selectedAccount?.account_type || "Normal";
 
+  // 🟢 ROBUST ACCOUNT DETECTION (Checks both Name and Type)
+  const accountTypeStr = (selectedAccount?.account_type || "Normal").toLowerCase();
+  const accountNameStr = (selectedAccount?.account_name || "").toLowerCase();
+
+  const isLoanAccount = accountTypeStr.includes("loan") || accountNameStr.includes("loan");
+  const isCreditCard = accountTypeStr.includes("credit") || accountTypeStr.includes("card") || accountNameStr.includes("credit") || accountNameStr.includes("card");
+  const isDebtAccount = isLoanAccount || isCreditCard;
+
+  const currentCurrency = selectedAccount?.currency || "USD";
+  const currencySymbol = currentCurrency === "KHR" ? "៛" : "$";
+
+  // 🟢 STRICT CATEGORY FILTERING RULES
   const displayCategories = useMemo(() => {
     return activeCategories.filter(cat => {
       const currentCatType = String(cat.type).toLowerCase().trim();
@@ -90,35 +88,39 @@ const TransactionModal = ({
 
       if (cleanCatName === "sweep saving") return false;
 
+      const isLoanPayment = cleanCatName.includes("loan") && (cleanCatName.includes("pay") || cleanCatName.includes("repay") || cleanCatName.includes("settle"));
+      const isLoanTopup = (cleanCatName.includes("loan") || cleanCatName.includes("top-up") || cleanCatName.includes("top up") || cleanCatName.includes("borrow")) && !isLoanPayment;
+      const isCardPayment = (cleanCatName.includes("card") || cleanCatName.includes("credit")) && (cleanCatName.includes("pay") || cleanCatName.includes("repay") || cleanCatName.includes("settle"));
+
+      // 1. LOAN ACCOUNT LOGIC
+      if (isLoanAccount) {
+        if (resolvedType === "income") {
+          return isLoanPayment;
+        } else {
+          return isLoanTopup;
+        }
+      }
+
+      // 2. CREDIT CARD ACCOUNT LOGIC
+      if (isCreditCard) {
+        if (resolvedType === "income") {
+          return isCardPayment;
+        } else {
+          return currentCatType === "expense" && !isLoanPayment && !isLoanTopup && !isCardPayment;
+        }
+      }
+
+      // 3. NORMAL ACCOUNTS LOGIC
       if (resolvedType === "income") {
         if (currentCatType !== "income" && currentCatType !== "transfer") return false;
       } else {
         if (currentCatType !== resolvedType) return false;
       }
 
-      const cleanAccountType = accountType.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const isLoanPayment = cat.name === "Loan Repayment";
-      const isLoanTopup = cat.name === "Loan Principal Top-Up";
-      const isCardPayment = cat.name === "Credit Card Payment";
-      const isCardExpense = cat.name === "Credit Card Expense";
-
-      if (resolvedType === "expense") {
-        if (cleanAccountType === "loan") return isLoanTopup;
-        if (cleanAccountType === "creditcard") return !isLoanPayment && !isLoanTopup && !isCardPayment;
-        return !isLoanPayment && !isLoanTopup && !isCardPayment && !isCardExpense;
-      }
-
-      if (resolvedType === "income") {
-        if (cleanAccountType === "loan") return isLoanPayment;
-        if (cleanAccountType === "creditcard") return isCardPayment;
-        return !isLoanTopup && !isCardExpense;
-      }
-
-      return true;
+      return !isLoanPayment && !isLoanTopup && !isCardPayment;
     });
-  }, [activeCategories, resolvedType, accountType, selectedAccount]);
+  }, [activeCategories, resolvedType, isLoanAccount, isCreditCard, selectedAccount]);
 
-  // 🎯 AUTOMATIC CATEGORY AND AMOUNT POPULATION HOOK
   useEffect(() => {
     if (!editData && selectedAccount?.is_savings_target && resolvedType === "income") {
       const targetSweepCat = displayCategories.find(c => c.name.toLowerCase() === "sweep saving");
@@ -127,7 +129,7 @@ const TransactionModal = ({
           idx === 0 ? {
             ...tx,
             category_id: String(targetSweepCat.id),
-            amount: targetSavingsAmount // 🔥 Automatically injects the calculated budget target value
+            amount: targetSavingsAmount
           } : tx
         ));
       }
@@ -142,7 +144,7 @@ const TransactionModal = ({
         return prev;
       });
     }
-  }, [accountType, resolvedType, editData, displayCategories, selectedAccount, targetSavingsAmount]);
+  }, [resolvedType, editData, displayCategories, selectedAccount, targetSavingsAmount]);
 
   useEffect(() => {
     if (!editData && filteredAccountsForDropdown.length > 0) {
@@ -153,46 +155,38 @@ const TransactionModal = ({
     }
   }, [filteredAccountsForDropdown, editData]);
 
-  const chosenCategoryObj = useMemo(() => {
-    return activeCategories.find(c => String(c.id) === String(transactions[0]?.category_id));
-  }, [activeCategories, transactions]);
+  const accountInfoLabel = useMemo(() => {
+    if (!selectedAccount) return null;
 
-  const secondaryDebtLabel = useMemo(() => {
-    if (!chosenCategoryObj) return null;
-    const catName = chosenCategoryObj.name;
-    const isCardAccount = accountType === "Credit Card" || accountType.toLowerCase() === "credit_card";
-    const isLoanAccount = accountType === "Loan" || accountType.toLowerCase() === "loan";
+    if (!isCreditCard && !isLoanAccount) return null;
 
-    if (catName === "Credit Card Payment" || catName === "Credit Card Expense" || isCardAccount) {
-      const cardAcc = isCardAccount ? selectedAccount : safeAccounts.find(acc => String(acc.account_type).toLowerCase().includes("credit") || String(acc.account_type).toLowerCase().includes("card") || String(acc.account_name).toLowerCase().includes("card"));
-      if (cardAcc) {
-        const rawDebt = Math.abs(parseFloat(cardAcc.balance || 0));
-        const limit = parseFloat(cardAcc.credit_limit || 0);
-        const spendRoom = Math.max(0, limit - rawDebt);
-        const dueDay = cardAcc.payment_due_day;
-        let dueString = "";
-        if (dueDay) {
-          const today = new Date();
-          let dueMonth = today.getMonth() + 1;
-          let dueYear = today.getFullYear();
-          if (today.getDate() > dueDay) {
-            dueMonth += 1;
-            if (dueMonth > 12) { dueMonth = 1; dueYear += 1; }
-          }
-          dueString = ` | Next Due: ${String(dueMonth).padStart(2, '0')}/${String(dueDay).padStart(2, '0')}/${dueYear}`;
-        }
-        return `Available Spend Room: $${spendRoom.toFixed(2)} / $${limit.toFixed(2)} Limit${dueString}`;
+    const rawDebt = Math.abs(parseFloat(selectedAccount.balance || 0));
+    const limit = parseFloat(selectedAccount.credit_limit || 0);
+    const dueDay = selectedAccount.payment_due_day;
+
+    let dueString = "";
+    if (dueDay) {
+      const today = new Date();
+      let dueMonth = today.getMonth() + 1;
+      let dueYear = today.getFullYear();
+      if (today.getDate() > dueDay) {
+        dueMonth += 1;
+        if (dueMonth > 12) { dueMonth = 1; dueYear += 1; }
       }
+      dueString = ` | Due: ${String(dueMonth).padStart(2, '0')}/${String(dueDay).padStart(2, '0')}/${dueYear}`;
     }
 
-    if (catName === "Loan Repayment" || catName === "Loan Principal Top-Up" || isLoanAccount) {
-      const loanAcc = isLoanAccount ? selectedAccount : safeAccounts.find(acc => String(acc.account_type).toLowerCase().includes("loan") || String(acc.account_name).toLowerCase().includes("loan"));
-      if (loanAcc) {
-        return `Remaining Balance to Clear: $${Math.abs(parseFloat(loanAcc.balance || 0)).toFixed(2)}`;
-      }
+    if (isCreditCard) {
+      const spendRoom = Math.max(0, limit - rawDebt);
+      return `Limit: ${currencySymbol}${limit.toFixed(2)} | Owed: ${currencySymbol}${rawDebt.toFixed(2)} | Avail Spend: ${currencySymbol}${spendRoom.toFixed(2)}${dueString}`;
     }
+
+    if (isLoanAccount) {
+      return `Outstanding Balance to Clear: ${currencySymbol}${rawDebt.toFixed(2)}${dueString}`;
+    }
+
     return null;
-  }, [chosenCategoryObj, selectedAccount, accountType, safeAccounts]);
+  }, [selectedAccount, isLoanAccount, isCreditCard, currencySymbol]);
 
   const renderCategoryIcon = (tx) => {
     const matchedCategory = activeCategories.find(cat => String(cat.id) === String(tx.category_id));
@@ -211,11 +205,11 @@ const TransactionModal = ({
   if (selectedAccount) {
     const rawBalance = parseFloat(selectedAccount.balance || 0);
     const creditLimit = parseFloat(selectedAccount.credit_limit || 0);
-    if (accountType === "Credit Card" || accountType.toLowerCase() === "credit_card") {
+    if (isCreditCard) {
       balanceLabel = "Available Credit:";
       availableCreditNum = creditLimit - Math.abs(rawBalance);
       balanceValue = availableCreditNum.toFixed(2);
-    } else if (accountType === "Loan") {
+    } else if (isLoanAccount) {
       balanceLabel = "Outstanding Debt:";
       balanceValue = Math.abs(rawBalance).toFixed(2);
     } else {
@@ -224,19 +218,18 @@ const TransactionModal = ({
     }
   }
 
-  const isCreditCard = accountType === "Credit Card" || accountType.toLowerCase() === "credit_card";
   const totalEnteredAmount = transactions.reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
   const isOverCreditLimit = resolvedType === "expense" && isCreditCard && totalEnteredAmount > availableCreditNum;
 
   let dynamicHeaderTitle = resolvedType === "expense" ? "Add Expense" : "Add Income";
   let dynamicSaveButtonText = "Save";
 
-  if (selectedAccount && (accountType === "Loan" || accountType === "Credit Card" || accountType.toLowerCase() === "credit_card")) {
+  if (selectedAccount && isDebtAccount) {
     if (resolvedType === "income") {
-      dynamicHeaderTitle = accountType === "Loan" ? "Make Loan Payment" : "Pay Credit Card Bill";
-      dynamicSaveButtonText = accountType === "Loan" ? "Record Debt Payment" : "Record Card Payment";
+      dynamicHeaderTitle = isLoanAccount ? "Make Loan Payment" : "Pay Credit Card Bill";
+      dynamicSaveButtonText = isLoanAccount ? "Record Debt Payment" : "Record Card Payment";
     } else if (resolvedType === "expense") {
-      dynamicHeaderTitle = accountType === "Loan" ? "Add Debt Charge" : "New Card Expense";
+      dynamicHeaderTitle = isLoanAccount ? "Add Debt Charge" : "New Card Expense";
       dynamicSaveButtonText = "Save Expense";
     }
   }
@@ -255,6 +248,8 @@ const TransactionModal = ({
         amount: "",
         category_id: "",
         account_id: transactions[0]?.account_id || (filteredAccountsForDropdown[0]?.id ? String(filteredAccountsForDropdown[0].id) : ""),
+        from_account_id: "",
+        interest_amount: "",
         transaction_date: transactions[0]?.transaction_date || new Date().toISOString().split('T')[0],
         transaction_time: transactions[0]?.transaction_time || new Date().toTimeString().split(' ')[0].substring(0, 5),
         description: transactions[0]?.description || ""
@@ -287,6 +282,14 @@ const TransactionModal = ({
       return;
     }
 
+    const enteredAmount = parseFloat(transactions[0].amount || 0);
+    const enteredInterest = parseFloat(transactions[0].interest_amount || 0);
+
+    if (enteredInterest > enteredAmount) {
+      alert("Interest portion cannot exceed the total amount paid.");
+      return;
+    }
+
     try {
       const chosenCategory = activeCategories.find(c => String(c.id) === String(transactions[0].category_id));
       const cleanCatName = chosenCategory ? chosenCategory.name.toLowerCase().trim() : "";
@@ -297,13 +300,18 @@ const TransactionModal = ({
         finalType = "transfer";
       }
 
+      const isDebtSettlement = resolvedType === "income" && isDebtAccount;
+
+      // 🟢 SCENARIO A PAYLOAD STRUCTURE
       const payload = {
-        amount: parseFloat(transactions[0].amount),
+        amount: enteredAmount, // Total Cash Deducted from Bank
         category_id: parseInt(transactions[0].category_id, 10),
-        account_id: parseInt(transactions[0].account_id, 10),
-        description: transactions[0].description.trim() || `Manual Budget Allocation: ${chosenCategory?.name}`,
+        account_id: isDebtSettlement ? parseInt(transactions[0].from_account_id, 10) : parseInt(transactions[0].account_id, 10),
+        to_account_id: isDebtSettlement ? parseInt(transactions[0].account_id, 10) : null,
+        interest_amount: enteredInterest, // Interest portion included in total amount
+        description: transactions[0].description.trim() || `Transaction: ${chosenCategory?.name}`,
         transaction_date: transactions[0].transaction_date,
-        type: finalType.toLowerCase()
+        type: isDebtSettlement ? "transfer" : finalType.toLowerCase()
       };
 
       let response;
@@ -315,12 +323,7 @@ const TransactionModal = ({
 
       if (response.status === 200 || response.status === 201) {
         if (fetchInitialData) fetchInitialData();
-
-        // 🟢 TRIGGER STATE UPDATE LOG IN APP.JSX
-        if (onTransactionSuccess) {
-          onTransactionSuccess();
-        }
-
+        if (onTransactionSuccess) onTransactionSuccess();
         closeModal();
       }
     } catch (error) {
@@ -336,6 +339,91 @@ const TransactionModal = ({
         </h2>
 
         <form onSubmit={handleSubmitAll} className="space-y-6">
+
+          <div className="flex items-center gap-4 bg-blue-50/40 p-4 rounded-2xl border border-blue-100">
+            <div className="w-12 h-12 flex items-center justify-center text-blue-600 text-xl"><FaWallet /></div>
+            <div className="flex-1 grid grid-cols-2 gap-4 items-center">
+              <div>
+                <label className="block text-gray-700 text-xs font-semibold mb-1">Target Account</label>
+                <select
+                  value={String(transactions[0]?.account_id || "")}
+                  onChange={(e) => handleGlobalFieldChange('account_id', e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm bg-white text-gray-800 focus:outline-none focus:border-blue-400 font-medium capitalize"
+                  required
+                >
+                  <option value="" disabled>Select Account</option>
+                  {filteredAccountsForDropdown.map(acc => (
+                    <option key={acc.id} value={String(acc.id)} className="text-gray-900 bg-white">
+                      {acc.account_name} ({acc.currency || "USD"}) {acc.account_type !== 'Normal' ? `[${acc.account_type}]` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="pt-2">
+                <p className="text-xs text-gray-500 font-semibold whitespace-nowrap">
+                  {balanceLabel} <span className="text-gray-800 text-sm font-bold ml-1">{currencySymbol}{balanceValue}</span>
+                </p>
+                {accountInfoLabel && (
+                  <p className="text-[10px] text-blue-600 font-bold mt-1 leading-tight">
+                    ℹ️ {accountInfoLabel}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 🟢 SOURCE ACCOUNT & INTEREST PORTION INPUTS */}
+          {resolvedType === "income" && isDebtAccount && (
+            <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-100 space-y-4 animate-in fade-in">
+              <div>
+                <label className="block text-gray-700 text-xs font-semibold mb-1">Pay From Account (Source Cash/Bank)</label>
+                <select
+                  value={transactions[0]?.from_account_id || ""}
+                  onChange={(e) => handleGlobalFieldChange('from_account_id', e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm bg-white text-gray-800 focus:outline-none font-medium"
+                  required
+                >
+                  <option value="" disabled>Select Source Bank Account</option>
+                  {safeAccounts
+                    .filter(acc => {
+                      const t = (acc.account_type || "").toLowerCase();
+                      const n = (acc.account_name || "").toLowerCase();
+                      const accIsLoan = t.includes("loan") || n.includes("loan");
+                      const accIsCard = t.includes("credit") || t.includes("card") || n.includes("credit") || n.includes("card");
+                      const accIsDebt = accIsLoan || accIsCard;
+
+                      return !accIsDebt && String(acc.id) !== String(transactions[0]?.account_id);
+                    })
+                    .map(acc => (
+                      <option key={acc.id} value={String(acc.id)}>
+                        {acc.account_name} ({acc.currency || "USD"})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {isLoanAccount && (
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-gray-700 text-xs font-semibold">Interest / Fee Included in Total (Optional)</label>
+                    <span className="text-[10px] text-amber-700 font-medium">Scenario A: Deducted from Total Amount</span>
+                  </div>
+                  <div className="relative flex items-center">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={transactions[0]?.interest_amount || ""}
+                      onChange={(e) => handleGlobalFieldChange('interest_amount', e.target.value)}
+                      placeholder="0.00"
+                      className="w-full border border-gray-300 rounded-xl pl-3 pr-8 py-2 text-sm bg-white font-semibold focus:outline-none"
+                    />
+                    <span className="absolute right-3 text-gray-500 font-medium text-sm">{currencySymbol}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-4">
             {transactions.map((tx, index) => (
               <div key={index} className="flex items-start gap-4 relative group">
@@ -371,15 +459,10 @@ const TransactionModal = ({
                           );
                         })}
                     </select>
-                    {index === 0 && secondaryDebtLabel && (
-                      <p className="text-[11px] text-blue-600 font-bold mt-1.5 animate-pulse">
-                        ℹ️ {secondaryDebtLabel}
-                      </p>
-                    )}
                   </div>
 
                   <div>
-                    <label className="block text-gray-700 text-xs font-semibold mb-1">Amount</label>
+                    <label className="block text-gray-700 text-xs font-semibold mb-1">Total Amount Paid ({currentCurrency})</label>
                     <div className="relative flex items-center">
                       <input
                         type="number"
@@ -390,7 +473,7 @@ const TransactionModal = ({
                         className="w-full border border-gray-300 rounded-xl pl-3 pr-8 py-2 text-sm font-semibold focus:outline-none focus:border-blue-400"
                         required
                       />
-                      <span className="absolute right-3 text-gray-500 font-medium text-sm">$</span>
+                      <span className="absolute right-3 text-gray-500 font-medium text-sm">{currencySymbol}</span>
                     </div>
                   </div>
                 </div>
@@ -401,7 +484,7 @@ const TransactionModal = ({
                       <button
                         type="button"
                         onClick={addNewItemRow}
-                        className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 transition-all shadow-sm"
+                        className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 transition-all shadow-sm cursor-pointer"
                       >
                         <FaPlus size={12} />
                       </button>
@@ -409,7 +492,7 @@ const TransactionModal = ({
                       <button
                         type="button"
                         onClick={(e) => removeItemRow(e, index)}
-                        className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-100 transition-all"
+                        className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-100 transition-all cursor-pointer"
                       >
                         <FaMinus size={12} />
                       </button>
@@ -418,33 +501,6 @@ const TransactionModal = ({
                 )}
               </div>
             ))}
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 flex items-center justify-center text-gray-600 text-xl"><FaWallet /></div>
-            <div className="flex-1 grid grid-cols-2 gap-4 items-center">
-              <div>
-                <label className="block text-gray-700 text-xs font-semibold mb-1">Account</label>
-                <select
-                  value={String(transactions[0]?.account_id || "")}
-                  onChange={(e) => handleGlobalFieldChange('account_id', e.target.value)}
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm bg-white text-gray-800 focus:outline-none focus:border-blue-400 font-medium capitalize"
-                  required
-                >
-                  <option value="" disabled>Select Account</option>
-                  {filteredAccountsForDropdown.map(acc => (
-                    <option key={acc.id} value={String(acc.id)} className="text-gray-900 bg-white">
-                      {acc.account_name} {acc.is_savings_target ? '📊 (Savings Account)' : acc.account_type !== 'Normal' ? `(${acc.account_type})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="pt-4">
-                <p className="text-xs text-gray-500 font-semibold whitespace-nowrap">
-                  {balanceLabel} <span className="text-gray-800 text-sm font-bold ml-1">${balanceValue}</span>
-                </p>
-              </div>
-            </div>
           </div>
 
           {isOverCreditLimit && (

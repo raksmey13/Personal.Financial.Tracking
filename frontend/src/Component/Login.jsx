@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
-import { FaEnvelope, FaLock, FaSignInAlt } from 'react-icons/fa';
+import { FaEnvelope, FaLock, FaSignInAlt, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { userAPI } from '../API/index';
+import ForgotPasswordModal from './ForgotPasswordModal';
 
 const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
-  const [identifier, setIdentifier] = useState(""); // 🚀 CHANGED: Can hold either Email or Username string
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isForgotOpen, setIsForgotOpen] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -13,19 +17,40 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
     setLoading(true);
 
     try {
-      // 🚀 MOCK AUTH RESPONSE: Simulates a secure backend verification window
-      setTimeout(() => {
-        console.log("Authenticating session credentials for:", identifier);
+      const response = await userAPI.login({
+        identifier: identifier.trim(),
+        password: password
+      });
 
-        const mockJwtToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.mockTokenData";
+      const token = response.data?.access_token || response.access_token;
 
-        // 🟢 FIXED TRIGGER: Instantly mounts the main dashboard layout workspace via App.jsx
-        onLoginSuccess(mockJwtToken);
-        setLoading(false);
-      }, 1000);
+      if (!token) {
+        throw new Error("No authentication token returned from server.");
+      }
+
+      localStorage.setItem("token", token);
+
+      // 🟢 FIX: Use direct fetch to guarantee the brand new token is sent in the headers
+      const profileRes = await fetch("http://127.0.0.1:8000/users/me", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const userData = await profileRes.json();
+
+      alert("Login successful! Welcome To PFTrack.");
+
+      // Pass both to App.jsx
+      if (onLoginSuccess) {
+        onLoginSuccess(token, userData);
+      }
 
     } catch (err) {
-      setError(err.response?.data?.detail || "Invalid login credentials. Please verify data entry.");
+      console.error("Login authentication error:", err);
+      setError(
+        err.response?.data?.detail ||
+        err.message ||
+        "Invalid login credentials. Please verify data entry."
+      );
+    } finally {
       setLoading(false);
     }
   };
@@ -36,7 +61,7 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
 
         {/* Header Block */}
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-black text-gray-800 tracking-tight">Welcome Back to NetStream</h2>
+          <h2 className="text-2xl font-black text-gray-800 tracking-tight">Welcome to PFTrack</h2>
           <p className="text-xs text-gray-400 font-semibold">Enter your account details to access your secure ledger metrics</p>
         </div>
 
@@ -47,7 +72,6 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Identity Field Input Box (Handles Email or Username entry values seamlessly) */}
           <div className="relative">
             <FaEnvelope className="absolute left-4 top-4 text-gray-400 text-xs" />
             <input
@@ -60,20 +84,37 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
             />
           </div>
 
-          {/* Password Input Line */}
-          <div className="relative">
-            <FaLock className="absolute left-4 top-4 text-gray-400 text-xs" />
-            <input
-              type="password"
-              required
-              placeholder="Account Access Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
-            />
+          <div className="space-y-1.5">
+            <div className="relative">
+              <FaLock className="absolute left-4 top-4 text-gray-400 text-xs" />
+              <input
+                type={showPassword ? "text" : "password"}
+                required
+                placeholder="Account Access Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-11 pr-11 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-3.5 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                {showPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
+              </button>
+            </div>
+
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={() => setIsForgotOpen(true)}
+                className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
+              >
+                Forgot Password?
+              </button>
+            </div>
           </div>
 
-          {/* Submit Action Button */}
           <button
             type="submit"
             disabled={loading}
@@ -84,7 +125,6 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
           </button>
         </form>
 
-        {/* Dynamic Route Switcher Footer */}
         <div className="text-center pt-2 border-t border-gray-50 text-xs font-semibold text-gray-400">
           New to the platform?{" "}
           <button
@@ -97,6 +137,11 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
         </div>
 
       </div>
+
+      <ForgotPasswordModal
+        isOpen={isForgotOpen}
+        onClose={() => setIsForgotOpen(false)}
+      />
     </div>
   );
 };

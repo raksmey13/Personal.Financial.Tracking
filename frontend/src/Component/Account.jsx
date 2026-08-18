@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { FaPlus, FaChevronDown, FaSyncAlt, FaEye, FaEyeSlash, FaEllipsisV, FaTrashAlt, FaPen, FaChevronUp, FaCalendarAlt } from "react-icons/fa";
+import { FaPlus, FaChevronDown, FaSyncAlt, FaEye, FaEyeSlash, FaEllipsisV, FaTrashAlt, FaPen, FaCalendarAlt } from "react-icons/fa";
 import { accountAPI, transactionAPI } from "../API/index";
 
 const AccountPage = () => {
@@ -20,12 +20,29 @@ const AccountPage = () => {
   const [formData, setFormData] = useState({
     name: "",
     account_type: "Normal",
-    currency: "USD-$",
+    currency: "USD",
     initialAmount: "0",
     credit_limit: "0",
     payment_due_day: "",
     note: "",
   });
+
+  // Helper Function for Currency Formatting
+  const formatMoney = (amount, currency = "USD") => {
+    const val = Number(amount) || 0;
+    if (currency === "KHR") {
+      return new Intl.NumberFormat("km-KH", {
+        style: "currency",
+        currency: "KHR",
+        maximumFractionDigits: 0,
+      }).format(val);
+    }
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+    }).format(val);
+  };
 
   // Handle click outside to close dropdowns
   useEffect(() => {
@@ -62,7 +79,7 @@ const AccountPage = () => {
 
   const handleOpenCreateModal = () => {
     setEditingAccountId(null);
-    setFormData({ name: "", account_type: "Normal", currency: "USD-$", initialAmount: "0", credit_limit: "0", payment_due_day: "", note: "" });
+    setFormData({ name: "", account_type: "Normal", currency: "USD", initialAmount: "0", credit_limit: "0", payment_due_day: "", note: "" });
     setIsDayDropdownOpen(false);
     setShowModal(true);
   };
@@ -72,12 +89,12 @@ const AccountPage = () => {
     setActiveMenuId(null);
     setEditingAccountId(acc.id);
 
-    const cleanDisplayAmount = Math.abs(acc.balance || 0);
+    const cleanDisplayAmount = Math.abs(acc.computedBalance || acc.balance || 0);
 
     setFormData({
       name: acc.account_name,
       account_type: acc.account_type || "Normal",
-      currency: "USD-$",
+      currency: acc.currency || "USD",
       initialAmount: String(cleanDisplayAmount),
       credit_limit: String(acc.credit_limit || 0),
       payment_due_day: acc.payment_due_day ? String(acc.payment_due_day) : "",
@@ -101,12 +118,13 @@ const AccountPage = () => {
     const payload = {
       account_name: formData.name.trim(),
       account_type: formData.account_type,
+      currency: formData.currency,
       balance: initialBalanceValue,
       credit_limit: formData.account_type === "Credit Card" ? parseFloat(formData.credit_limit || 0) : 0,
       payment_due_day: !["Normal", "Savings"].includes(formData.account_type) && formData.payment_due_day ? parseInt(formData.payment_due_day, 10) : null,
       note: formData.note.trim() || null,
       is_active: true,
-      is_savings_target: formData.account_type === "Savings" // 🟢 Linked explicitly to payload
+      is_savings_target: formData.account_type === "Savings"
     };
 
     try {
@@ -118,7 +136,7 @@ const AccountPage = () => {
       }
 
       if (response.status === 200 || response.status === 201) {
-        setFormData({ name: '', account_type: 'Normal', currency: 'USD-$', initialAmount: '0', credit_limit: '0', payment_due_day: "", note: '' });
+        setFormData({ name: '', account_type: 'Normal', currency: 'USD', initialAmount: '0', credit_limit: '0', payment_due_day: "", note: '' });
         setShowModal(false);
         setEditingAccountId(null);
         await fetchAccounts();
@@ -144,30 +162,57 @@ const AccountPage = () => {
     }
   };
 
-  const totalAssets = accounts
-    .filter(acc => acc.account_type === "Normal" || acc.account_type === "Savings")
-    .reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
+  // Process accounts and ledger totals cleanly
+  const enhancedAccounts = accounts.map(acc => {
+    const accountTx = transactions.filter(tx => String(tx.account_id) === String(acc.id));
 
-  const totalLiabilities = accounts
-    .filter(acc => acc.account_type === "Credit Card" || acc.account_type === "Loan")
-    .reduce((sum, acc) => sum + Math.abs(parseFloat(acc.balance || 0)), 0);
+    const totalInflow = accountTx
+      .filter(tx => tx.type?.toLowerCase() === 'income')
+      .reduce((sum, tx) => sum + Math.abs(parseFloat(tx.amount || 0)), 0);
 
-  const netWorth = totalAssets - totalLiabilities;
+    const totalOutflow = accountTx
+      .filter(tx => tx.type?.toLowerCase() === 'expense')
+      .reduce((sum, tx) => sum + Math.abs(parseFloat(tx.amount || 0)), 0);
+
+    let dbBalance = parseFloat(acc.balance || 0);
+
+    return {
+      ...acc,
+      computedBalance: dbBalance,
+      totalInflow,
+      totalOutflow,
+      accountTx
+    };
+  });
+
+  const totalAssetsUSD = enhancedAccounts
+    .filter(acc => (acc.account_type === "Normal" || acc.account_type === "Savings") && (acc.currency || "USD") === "USD")
+    .reduce((sum, acc) => sum + acc.computedBalance, 0);
+
+  const totalLiabilitiesUSD = enhancedAccounts
+    .filter(acc => (acc.account_type === "Credit Card" || acc.account_type === "Loan") && (acc.currency || "USD") === "USD")
+    .reduce((sum, acc) => sum + Math.abs(acc.computedBalance), 0);
+
+  const totalAssetsKHR = enhancedAccounts
+    .filter(acc => (acc.account_type === "Normal" || acc.account_type === "Savings") && acc.currency === "KHR")
+    .reduce((sum, acc) => sum + acc.computedBalance, 0);
+
+  const netWorthUSD = totalAssetsUSD - totalLiabilitiesUSD;
   const currentDayOfMonth = new Date().getDate();
 
   const renderLedgerAnalyticsBreakdown = (acc) => {
-    const accountTx = transactions.filter(tx => String(tx.account_id) === String(acc.id));
+    const curr = acc.currency || "USD";
 
     if (acc.account_type === "Loan") {
-      const totalBorrowed = Math.abs(parseFloat(acc.balance || 0));
+      const totalBorrowed = Math.abs(acc.computedBalance);
 
-      const totalPaid = accountTx
+      const totalPaid = acc.accountTx
         .filter(tx => {
           const isTxTransfer = tx.type?.toLowerCase() === 'transfer';
           const isLoanCat = String(tx.category_id) === "3" || (tx.category_name && String(tx.category_name).toLowerCase().includes("loan"));
           return tx.type?.toLowerCase() === 'income' || (isTxTransfer && isLoanCat);
         })
-        .reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
+        .reduce((sum, tx) => sum + Math.abs(parseFloat(tx.amount || 0)), 0);
 
       return (
         <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 gap-2 text-left px-1">
@@ -180,11 +225,11 @@ const AccountPage = () => {
           <div className="grid grid-cols-2 gap-3 text-center">
             <div className="bg-gray-50 p-3 rounded-xl">
               <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">Borrowed Base</span>
-              <span className="text-sm font-extrabold text-gray-700">${totalBorrowed.toFixed(2)}</span>
+              <span className="text-sm font-extrabold text-gray-700">{formatMoney(totalBorrowed, curr)}</span>
             </div>
             <div className="bg-green-50 p-3 rounded-xl">
               <span className="text-[10px] text-green-600 font-bold uppercase tracking-wider block mb-1">Total Paid</span>
-              <span className="text-sm font-extrabold text-green-700">${totalPaid.toFixed(2)}</span>
+              <span className="text-sm font-extrabold text-green-700">{formatMoney(totalPaid, curr)}</span>
             </div>
           </div>
         </div>
@@ -192,17 +237,17 @@ const AccountPage = () => {
     }
 
     if (acc.account_type === "Credit Card") {
-      const totalSpent = accountTx
+      const totalSpent = acc.accountTx
         .filter(tx => tx.type?.toLowerCase() === 'expense')
-        .reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
+        .reduce((sum, tx) => sum + Math.abs(parseFloat(tx.amount || 0)), 0);
 
-      const totalPayments = accountTx
+      const totalPayments = acc.accountTx
         .filter(tx => {
           const isTxTransfer = tx.type?.toLowerCase() === 'transfer';
           const isCreditCat = String(tx.category_id) === "2" || (tx.category_name && (String(tx.category_name).toLowerCase().includes("credit") || String(tx.category_name).toLowerCase().includes("card")));
           return tx.type?.toLowerCase() === 'income' || (isTxTransfer && isCreditCat);
         })
-        .reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
+        .reduce((sum, tx) => sum + Math.abs(parseFloat(tx.amount || 0)), 0);
 
       return (
         <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 gap-2 text-left px-1">
@@ -215,24 +260,16 @@ const AccountPage = () => {
           <div className="grid grid-cols-2 gap-3 text-center">
             <div className="bg-red-50 p-3 rounded-xl">
               <span className="text-[10px] text-red-600 font-bold uppercase tracking-wider block mb-1">Total Spending Swipe</span>
-              <span className="text-sm font-extrabold text-red-700">${totalSpent.toFixed(2)}</span>
+              <span className="text-sm font-extrabold text-red-700">{formatMoney(totalSpent, curr)}</span>
             </div>
             <div className="bg-green-50 p-3 rounded-xl">
               <span className="text-[10px] text-green-600 font-bold uppercase tracking-wider block mb-1">Payments Settled</span>
-              <span className="text-sm font-extrabold text-green-700">${totalPayments.toFixed(2)}</span>
+              <span className="text-sm font-extrabold text-green-700">{formatMoney(totalPayments, curr)}</span>
             </div>
           </div>
         </div>
       );
     }
-
-    const inflow = accountTx
-      .filter(tx => tx.type?.toLowerCase() === 'income' || tx.type?.toLowerCase() === 'transfer')
-      .reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
-
-    const outflow = accountTx
-      .filter(tx => tx.type?.toLowerCase() === 'expense')
-      .reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
 
     return (
       <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 gap-2 text-left px-1">
@@ -245,11 +282,11 @@ const AccountPage = () => {
         <div className="grid grid-cols-2 gap-3 text-center">
           <div className="bg-green-50 p-3 rounded-xl">
             <span className="text-[10px] text-green-600 font-bold uppercase tracking-wider block mb-1">Total Cash Inflow</span>
-            <span className="text-sm font-extrabold text-green-700">${inflow.toFixed(2)}</span>
+            <span className="text-sm font-extrabold text-green-700">{formatMoney(acc.totalInflow, curr)}</span>
           </div>
           <div className="bg-red-50 p-3 rounded-xl">
             <span className="text-[10px] text-red-600 font-bold uppercase tracking-wider block mb-1">Total Cash Outflow</span>
-            <span className="text-sm font-extrabold text-red-700">${outflow.toFixed(2)}</span>
+            <span className="text-sm font-extrabold text-red-700">{formatMoney(acc.totalOutflow, curr)}</span>
           </div>
         </div>
       </div>
@@ -260,34 +297,44 @@ const AccountPage = () => {
     <div className="p-8 bg-[#F8F9FD] min-h-screen relative">
       <div className="space-y-6">
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-            <span className="text-[11px] uppercase tracking-wider font-extrabold text-gray-400 block mb-1">Total Assets</span>
+            <span className="text-[11px] uppercase tracking-wider font-extrabold text-gray-400 block mb-1">USD Assets</span>
             <div className="text-2xl font-black text-green-600">
-              {hideBalances ? "$ ••••••" : `$${totalAssets.toFixed(2)}`}
+              {hideBalances ? "$ ••••••" : formatMoney(totalAssetsUSD, "USD")}
             </div>
           </div>
+
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+            <span className="text-[11px] uppercase tracking-wider font-extrabold text-gray-400 block mb-1">KHR Assets</span>
+            <div className="text-2xl font-black text-emerald-600">
+              {hideBalances ? "••••••" : formatMoney(totalAssetsKHR, "KHR")}
+            </div>
+          </div>
+
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
             <span className="text-[11px] uppercase tracking-wider font-extrabold text-gray-400 block mb-1">Total Liabilities</span>
             <div className="text-2xl font-black text-red-500">
-              {hideBalances ? "$ ••••••" : `$${totalLiabilities.toFixed(2)}`}
+              {hideBalances ? "$ ••••••" : formatMoney(totalLiabilitiesUSD, "USD")}
             </div>
           </div>
+
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 bg-gradient-to-br from-blue-50/20 to-indigo-50/10">
-            <span className="text-[11px] uppercase tracking-wider font-blue-600 block mb-1">Net Asset Worth</span>
-            <div className={`text-2xl font-black ${netWorth >= 0 ? "text-blue-600" : "text-red-500"}`}>
-              {hideBalances ? "$ ••••••" : `${netWorth < 0 ? '-' : ''}$${Math.abs(netWorth).toFixed(2)}`}
+            <span className="text-[11px] uppercase tracking-wider font-semibold text-blue-600 block mb-1">USD Net Worth</span>
+            <div className={`text-2xl font-black ${netWorthUSD >= 0 ? "text-blue-600" : "text-red-500"}`}>
+              {hideBalances ? "$ ••••••" : formatMoney(netWorthUSD, "USD")}
             </div>
           </div>
         </div>
 
-        {accounts.length === 0 ? (
+        {enhancedAccounts.length === 0 ? (
           <div className="text-center py-12 text-gray-400 italic text-sm bg-white rounded-xl border border-gray-100">
             No accounts active yet. Click the '+' button below to initialize your first wallet!
           </div>
         ) : (
-          accounts.map((acc) => {
-            const currentBalance = parseFloat(acc.balance || 0);
+          enhancedAccounts.map((acc) => {
+            const currentBalance = acc.computedBalance;
+            const accountCurrency = acc.currency || "USD";
 
             const availableCredit = acc.account_type === "Credit Card"
               ? parseFloat(acc.credit_limit || 0) + currentBalance
@@ -325,6 +372,10 @@ const AccountPage = () => {
                         {acc.account_type || "Normal"}
                       </span>
 
+                      <span className="text-[10px] bg-gray-100 text-gray-700 font-extrabold px-2 py-0.5 rounded-full border border-gray-200 uppercase">
+                        {accountCurrency}
+                      </span>
+
                       {acc.payment_due_day && (
                         <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-100 font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1">
                           <FaCalendarAlt size={8} /> Due Day {acc.payment_due_day}
@@ -334,7 +385,7 @@ const AccountPage = () => {
 
                     {acc.account_type === "Credit Card" && (
                       <p className="text-xs text-gray-400 font-semibold tracking-wide">
-                        Available Credit: <span className="text-gray-700 font-bold">${availableCredit.toFixed(2)}</span> / ${parseFloat(acc.credit_limit).toFixed(2)}
+                        Available Credit: <span className="text-gray-700 font-bold">{formatMoney(availableCredit, accountCurrency)}</span> / {formatMoney(parseFloat(acc.credit_limit), accountCurrency)}
                       </p>
                     )}
 
@@ -356,7 +407,7 @@ const AccountPage = () => {
                           ? (currentBalance >= 0 ? "text-green-600" : "text-red-500")
                           : "text-red-500"
                       }`}>
-                        {hideBalances ? "$ ••••••" : `$${Math.abs(currentBalance).toFixed(2)}`}
+                        {hideBalances ? "••••••" : formatMoney(Math.abs(currentBalance), accountCurrency)}
                       </div>
                     </div>
 
@@ -438,18 +489,32 @@ const AccountPage = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-gray-700 font-semibold mb-1">Account Type</label>
-                <select
-                  value={formData.account_type}
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 bg-white focus:outline-none font-semibold cursor-pointer"
-                  onChange={(e) => setFormData({...formData, account_type: e.target.value})}
-                >
-                  <option value="Normal">Cash / Bank Account</option>
-                  <option value="Savings">Savings / Wealth Vault</option>
-                  <option value="Credit Card">Credit Card</option>
-                  <option value="Loan">Loan / Personal Debt</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1">Account Type</label>
+                  <select
+                    value={formData.account_type}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 bg-white focus:outline-none font-semibold cursor-pointer"
+                    onChange={(e) => setFormData({...formData, account_type: e.target.value})}
+                  >
+                    <option value="Normal">Cash / Bank Account</option>
+                    <option value="Savings">Savings / Wealth Vault</option>
+                    <option value="Credit Card">Credit Card</option>
+                    <option value="Loan">Loan / Personal Debt</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1">Currency</label>
+                  <select
+                    value={formData.currency}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 bg-white focus:outline-none font-semibold cursor-pointer"
+                    onChange={(e) => setFormData({...formData, currency: e.target.value})}
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="KHR">KHR (៛)</option>
+                  </select>
+                </div>
               </div>
 
               {formData.account_type === "Credit Card" && (
