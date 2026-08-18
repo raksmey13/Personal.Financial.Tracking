@@ -31,7 +31,8 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
       localStorage.setItem("token", token);
 
       // 🟢 FIX: Use direct fetch to guarantee the brand new token is sent in the headers
-      const profileRes = await fetch("http://127.0.0.1:8000/users/me", {
+      const backendUrl = import.meta.env.VITE_API_BASE_URL || "https://personal-financial-tracking.onrender.com";
+      const profileRes = await fetch(`${backendUrl}/users/me`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const userData = await profileRes.json();
