@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FaRegEye, FaFileExcel, FaFileCsv } from 'react-icons/fa';
 // Import central API client helpers
-import { accountAPI, exportImportAPI } from '../api'; // Adjust path if needed
+import { accountAPI, exportImportAPI } from '../API'; // Adjust path if needed
 
 const ExportImport = ({ mode }) => {
   const [accounts, setAccounts] = useState([]);
