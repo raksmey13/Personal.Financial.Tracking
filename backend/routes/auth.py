@@ -7,36 +7,24 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 import random
 import shutil
 import bcrypt
+import resend
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
 from sqlmodel import Session, select
 from jose import JWTError, jwt
 
-# 🟢 FASTAPI-MAIL IMPORTS
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
-
 from database import SessionDep
 from models import User, UserProfile, Category
 
-# 🟢 SMTP / EMAIL SERVICE CONFIGURATION
-conf = ConnectionConfig(
-    MAIL_USERNAME="nim.chanraksmey@gmail.com",
-    MAIL_PASSWORD="pmpa vdml vznl ntis",
-    MAIL_FROM="nim.chanraksmey@gmail.com",
-    MAIL_PORT=587,
-    MAIL_SERVER="smtp.gmail.com",
-    MAIL_STARTTLS=True,
-    MAIL_SSL_TLS=False,
-    USE_CREDENTIALS=True,
-    VALIDATE_CERTS=False
-)
+# 🟢 RESEND API CONFIGURATION (Uses Port 443 HTTPS - Works on Render Free Tier)
+resend.api_key = os.getenv("RESEND_API_KEY")
 
 # 🟢 SECURITY CONFIGURATION
-SECRET_KEY = "YOUR_SUPER_SECRET_KEY_CHANGE_THIS_IN_PRODUCTION"
+SECRET_KEY = os.getenv("SECRET_KEY", "YOUR_SUPER_SECRET_KEY_CHANGE_THIS_IN_PRODUCTION")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 Days Token Validity
 
@@ -75,7 +63,6 @@ def provision_user_default_categories(session: Session, user_id: int):
         {"name": "General Expense", "type": "expense", "icon": "receipt"},
         {"name": "Food & Dining", "type": "expense", "icon": "utensils"},
         {"name": "Salary", "type": "income", "icon": "briefcase"},
-        # 🟢 Added the missing 4 categories for all new users!
         {"name": "Transport", "type": "expense", "icon": "car"},
         {"name": "Shopping", "type": "expense", "icon": "shopping-bag"},
         {"name": "Entertainment", "type": "expense", "icon": "film"},
@@ -95,7 +82,7 @@ def provision_user_default_categories(session: Session, user_id: int):
                 name=cat["name"],
                 type=cat["type"],
                 icon=cat["icon"],
-                user_id=user_id  # Strictly bound to new user
+                user_id=user_id
             )
             session.add(new_cat)
 
@@ -103,20 +90,29 @@ def provision_user_default_categories(session: Session, user_id: int):
 
 
 async def send_otp_email(email_to: str, otp_code: str):
-    """Dispatches the 6-digit OTP code to the user via SMTP."""
+    """Dispatches the 6-digit OTP code to the user via Resend HTTP API."""
     try:
-        message = MessageSchema(
-            subject="PFTrack Account Verification Code",
-            recipients=[email_to],
-            body=f"Your 6-digit OTP verification code is: {otp_code}\n\nThis code is required to activate your PFTrack account.",
-            subtype=MessageType.plain
-        )
-        fm = FastMail(conf)
-        await fm.send_message(message)
-        print(f"📧 REAL EMAIL DISPATCHED to {email_to}")
+        params: resend.Emails.SendParams = {
+            "from": "PFTrack <onboarding@resend.dev>",
+            "to": [email_to],
+            "subject": "PFTrack Account Verification Code",
+            "html": f"""
+                <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; border: 1px solid #e2e8f0; rounded: 8px;">
+                    <h2 style="color: #1e293b; text-align: center;">Welcome to PFTrack!</h2>
+                    <p style="color: #475569; text-align: center;">Your 6-digit OTP verification code is:</p>
+                    <div style="background-color: #f1f5f9; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0;">
+                        <h1 style="color: #3D5AFE; letter-spacing: 4px; font-size: 32px; margin: 0;">{otp_code}</h1>
+                    </div>
+                    <p style="color: #64748b; font-size: 14px; text-align: center;">This code is required to activate your account. Do not share it with anyone.</p>
+                </div>
+            """,
+        }
+        response = resend.Emails.send(params)
+        print(f"📧 EMAIL DISPATCHED VIA RESEND to {email_to}: {response}")
+        return response
     except Exception as e:
-        print(f"❌ SMTP FAILED: {str(e)}")
-        raise e  # Force FastAPI to log the real Google error!
+        print(f"❌ RESEND DISPATCH FAILED: {str(e)}")
+        raise e
 
 
 def create_access_token(data: dict) -> str:
@@ -224,7 +220,7 @@ async def signup(signup_data: SignupRequest, session: SessionDep):
     provision_user_default_categories(session, new_user.id)
     session.commit()
 
-    # Await email directly so FastAPI doesn't kill the connection early
+    # Await email dispatch via Resend HTTPS API
     await send_otp_email(signup_data.email, otp_code)
 
     return {
@@ -297,7 +293,6 @@ def login(login_data: LoginRequest, session: SessionDep):
     }
 
 
-# 🚀 4. FETCH CURRENT PROFILE
 # 🚀 4. FETCH CURRENT PROFILE
 @router.get("/me")
 def get_profile(session: SessionDep, current_user: User = Depends(get_current_user)):
