@@ -9,7 +9,7 @@ import shutil
 import bcrypt
 import resend
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from fastapi.security import OAuth2PasswordBearer
@@ -20,7 +20,7 @@ from jose import JWTError, jwt
 from database import SessionDep
 from models import User, UserProfile, Category
 
-# 🟢 RESEND API CONFIGURATION (Uses Port 443 HTTPS - Works on Render Free Tier)
+# 🟢 RESEND API CONFIGURATION
 resend.api_key = os.getenv("RESEND_API_KEY")
 
 # 🟢 SECURITY CONFIGURATION
@@ -35,25 +35,25 @@ router = APIRouter(prefix="/users", tags=["Profile Management & Authentication"]
 UPLOAD_DIR = "static/avatars"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# ---------------------------------------------------------
+# TEMPORARY IN-MEMORY STORAGE FOR UNVERIFIED SIGNUPS
+# Data stays here and is ONLY written to the DB after OTP verify
+# ---------------------------------------------------------
+pending_registrations: Dict[str, Any] = {}
+
 
 # ---------------------------------------------------------
 # SECURITY & HELPER FUNCTIONS
 # ---------------------------------------------------------
 def hash_password(password: str) -> str:
-    """Hashes a raw password using native bcrypt."""
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifies a raw password against its stored bcrypt hash."""
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
 def provision_user_default_categories(session: Session, user_id: int):
-    """
-    Seeds essential baseline categories bound specifically to a newly registered user
-    so downstream routes (like /accounts/) never fail due to missing foreign keys.
-    """
     default_cats = [
         {"name": "Opening Balance", "type": "income", "icon": "wallet"},
         {"name": "Credit Card Payment", "type": "transfer", "icon": "credit-card"},
@@ -90,7 +90,6 @@ def provision_user_default_categories(session: Session, user_id: int):
 
 
 async def send_otp_email(email_to: str, otp_code: str):
-    """Dispatches the 6-digit OTP code to the user via Resend HTTP API."""
     try:
         params: resend.Emails.SendParams = {
             "from": "PFTrack <onboarding@resend.dev>",
@@ -116,7 +115,6 @@ async def send_otp_email(email_to: str, otp_code: str):
 
 
 def create_access_token(data: dict) -> str:
-    """Generates a signed JWT access token containing encoded payload metadata."""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
@@ -124,10 +122,6 @@ def create_access_token(data: dict) -> str:
 
 
 def get_current_user(session: SessionDep, token: Optional[str] = Depends(oauth2_scheme)) -> User:
-    """
-    DYNAMIC AUTH GENERATOR: Validates incoming Bearer JWT tokens and resolves
-    the exact user object bound to the encoded token subject.
-    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate authentication credentials.",
@@ -171,6 +165,10 @@ class VerifyOTPRequest(BaseModel):
     otp_code: str
 
 
+class ResendOTPRequest(BaseModel):
+    email: EmailStr
+
+
 class LoginRequest(BaseModel):
     identifier: str
     password: str
@@ -191,9 +189,10 @@ class UserPasswordUpdate(BaseModel):
 # AUTHENTICATION ENDPOINTS
 # ---------------------------------------------------------
 
-# 🚀 1. ACCOUNT REGISTRATION WITH 6-DIGIT OTP GENERATION & EMAIL DISPATCH
+# 🚀 1. ACCOUNT REGISTRATION (TEMPORARY MEMORY STORAGE)
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(signup_data: SignupRequest, session: SessionDep):
+    # Ensure they aren't already fully registered in the actual database
     existing_email = session.exec(select(User).where(User.email == signup_data.email)).first()
     if existing_email:
         raise HTTPException(status_code=400, detail="Email is already registered.")
@@ -201,18 +200,61 @@ async def signup(signup_data: SignupRequest, session: SessionDep):
     hashed_pw = hash_password(signup_data.password)
     otp_code = str(random.randint(100000, 999999))
 
+    # Save to server memory INSTEAD of Database
+    pending_registrations[signup_data.email] = {
+        "first_name": signup_data.first_name,
+        "last_name": signup_data.last_name,
+        "email": signup_data.email,
+        "hashed_password": hashed_pw,
+        "otp_code": otp_code,
+        "expires_at": datetime.utcnow() + timedelta(minutes=15)
+    }
+
+    # Dispatch email
+    await send_otp_email(signup_data.email, otp_code)
+
+    return {
+        "message": "OTP sent to email. Account details saved temporarily pending verification."
+    }
+
+
+# 🚀 2. VERIFY OTP CODE (ACTUAL DATABASE INSERTION)
+@router.post("/verify-otp")
+def verify_otp(verify_data: VerifyOTPRequest, session: SessionDep):
+    pending_user = pending_registrations.get(verify_data.email)
+
+    if not pending_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pending registration not found. Please sign up again."
+        )
+
+    if datetime.utcnow() > pending_user["expires_at"]:
+        del pending_registrations[verify_data.email]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP has expired. Please sign up again or request a new OTP."
+        )
+
+    if pending_user["otp_code"] != verify_data.otp_code.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OTP code. Verification failed."
+        )
+
+    # ✅ OTP IS CORRECT: Now we finally insert everything into the database
     new_user = User(
-        email=signup_data.email,
-        hashed_password=hashed_pw,
-        is_verified=False,
-        verification_token=otp_code
+        email=pending_user["email"],
+        hashed_password=pending_user["hashed_password"],
+        is_verified=True,
+        verification_token=None
     )
     session.add(new_user)
     session.flush()
 
     new_profile = UserProfile(
-        first_name=signup_data.first_name,
-        last_name=signup_data.last_name or "",
+        first_name=pending_user["first_name"],
+        last_name=pending_user["last_name"] or "",
         user_id=new_user.id
     )
     session.add(new_profile)
@@ -220,42 +262,37 @@ async def signup(signup_data: SignupRequest, session: SessionDep):
     provision_user_default_categories(session, new_user.id)
     session.commit()
 
-    # Await email dispatch via Resend HTTPS API
-    await send_otp_email(signup_data.email, otp_code)
+    # Clean up the memory storage for this user
+    del pending_registrations[verify_data.email]
 
-    return {
-        "message": "Account created. Verification required before logging in."
-    }
+    return {"message": "Account created and verified successfully! You may now log in."}
 
 
-# 🚀 2. VERIFY 6-DIGIT OTP CODE
-@router.post("/verify-otp")
-def verify_otp(verify_data: VerifyOTPRequest, session: SessionDep):
-    user = session.exec(select(User).where(User.email == verify_data.email)).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User account not found."
-        )
+# 🚀 3. RESEND OTP ENDPOINT
+@router.post("/resend-otp")
+async def resend_otp(resend_data: ResendOTPRequest, session: SessionDep):
+    pending_user = pending_registrations.get(resend_data.email)
 
-    if user.is_verified:
-        return {"message": "Account is already verified. You may proceed to login."}
+    if not pending_user:
+        # Let's also check if they are already fully verified in the actual DB
+        existing_user = session.exec(select(User).where(User.email == resend_data.email)).first()
+        if existing_user and existing_user.is_verified:
+            raise HTTPException(status_code=400, detail="Account is already registered and verified. Please log in.")
 
-    if user.verification_token != verify_data.otp_code.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OTP code. Verification failed."
-        )
+        raise HTTPException(status_code=404, detail="No pending registration found. Please sign up first.")
 
-    user.is_verified = True
-    user.verification_token = None
-    session.add(user)
-    session.commit()
+    # Generate new OTP and reset timer
+    new_otp = str(random.randint(100000, 999999))
+    pending_registrations[resend_data.email]["otp_code"] = new_otp
+    pending_registrations[resend_data.email]["expires_at"] = datetime.utcnow() + timedelta(minutes=15)
 
-    return {"message": "Account verified successfully! You may now log in."}
+    # Dispatch email
+    await send_otp_email(resend_data.email, new_otp)
+
+    return {"message": "A new OTP has been sent to your email."}
 
 
-# 🚀 3. DUAL-IDENTIFIER JWT LOGIN WITH VERIFICATION GUARD
+# 🚀 4. DUAL-IDENTIFIER JWT LOGIN
 @router.post("/login")
 def login(login_data: LoginRequest, session: SessionDep):
     user = None
@@ -293,7 +330,7 @@ def login(login_data: LoginRequest, session: SessionDep):
     }
 
 
-# 🚀 4. FETCH CURRENT PROFILE
+# 🚀 5. FETCH CURRENT PROFILE
 @router.get("/me")
 def get_profile(session: SessionDep, current_user: User = Depends(get_current_user)):
     profile = current_user.profile
@@ -314,7 +351,7 @@ def get_profile(session: SessionDep, current_user: User = Depends(get_current_us
     }
 
 
-# 🚀 5. UPDATE GENERAL PROFILE DETAILS
+# 🚀 6. UPDATE GENERAL PROFILE DETAILS
 @router.put("/me")
 def update_profile(
         profile_data: UserProfileUpdate,
@@ -350,7 +387,7 @@ def update_profile(
     }
 
 
-# 🚀 6. MULTIPART BINARY AVATAR UPLOAD
+# 🚀 7. MULTIPART BINARY AVATAR UPLOAD
 @router.post("/me/avatar")
 def upload_avatar(
         session: SessionDep,
@@ -369,7 +406,7 @@ def upload_avatar(
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        profile.avatar_url = f"http://127.0.0.1:8000/{file_path}"
+        profile.avatar_url = f"https://personal-financial-tracking.onrender.com/{file_path}"
         session.add(profile)
         session.commit()
 
@@ -382,7 +419,7 @@ def upload_avatar(
     }
 
 
-# 🚀 7. SECURITY GATEWAY PASSWORD CHANGE
+# 🚀 8. SECURITY GATEWAY PASSWORD CHANGE
 @router.put("/me/change-password")
 def change_password(
         password_data: UserPasswordUpdate,
