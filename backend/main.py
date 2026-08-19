@@ -146,29 +146,40 @@ async def lifespan(app: FastAPI):
     create_db_and_tables()
     init_superadmin_and_defaults()
 
-    tg_app = None
+    global tg_app
     if BOT_TOKEN:
         tg_app = ApplicationBuilder().token(BOT_TOKEN).build()
         tg_app.add_handler(CommandHandler("start", handle_start_command))
         tg_app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), handle_telegram_receipt))
 
         await tg_app.initialize()
-        await tg_app.start()
-        asyncio.create_task(tg_app.updater.start_polling())
-        logger.info("🤖 Telegram Bot listener initialized and running in background!")
+        logger.info("🤖 Telegram Bot initialized for Webhooks!")
     else:
         logger.warning("⚠️ Warning: TELEGRAM_BOT_TOKEN not found in environment variables.")
 
     yield
 
     if tg_app:
-        logger.info("Stopping Telegram Bot...")
-        await tg_app.updater.stop()
-        await tg_app.stop()
+        logger.info("Shutting down Telegram Bot...")
         await tg_app.shutdown()
 
 
 app = FastAPI(lifespan=lifespan, title="Personal Finance Tracker API")
+
+# Global reference for webhook handling
+tg_app = None
+
+
+# --- NEW: Webhook Endpoint for Telegram ---
+@app.post("/telegram/webhook")
+async def telegram_webhook(request: Request):
+    if not tg_app:
+        return {"status": "bot not initialized"}
+
+    data = await request.json()
+    update = Update.de_json(data, tg_app.bot)
+    await tg_app.process_update(update)
+    return {"status": "ok"}
 
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
