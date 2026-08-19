@@ -28,9 +28,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["AI Engine"])
 
-api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+    possible_paths = ["service_account.json", "backend/service_account.json"]
+    for path in possible_paths:
+        if os.path.exists(path):
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = path
+            break
 
-# 🟢 Initialize client forcing the Developer API v1beta endpoint to prevent 404 Vertex routing errors
 client = genai.Client(
     enterprise=True,
     project="gen-lang-client-0602822816",
