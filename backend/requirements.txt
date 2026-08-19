@@ -14,3 +14,8 @@ python-jose[cryptography]
 alembic
 jinja2
 resend
+openpyxl
+reportlab
+pillow
+pytesseract
+requests
