@@ -4,3 +4,4 @@ backend/.env
 *.env
 __pycache__/
 *.pyc
+backend/service_account.json

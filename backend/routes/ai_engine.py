@@ -1,17 +1,19 @@
 import io
 import os
 import re
-import base64
 import logging
-import requests
 from datetime import datetime, date, timedelta
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlmodel import select, Session
+
+# 🟢 Official Google GenAI SDK
+from google import genai
+from google.genai import types
 
 from database import SessionDep, engine
 from models import (
@@ -28,14 +30,18 @@ router = APIRouter(prefix="/ai", tags=["AI Engine"])
 
 api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
-if not api_key:
-    raise ValueError("API key is missing from environment variables!")
+# 🟢 Initialize client forcing the Developer API v1beta endpoint to prevent 404 Vertex routing errors
+client = genai.Client(
+    enterprise=True,
+    project="gen-lang-client-0602822816",
+    location="us-central1"
+)
 
-MODEL_NAME = "gemini-3.6-flash"
+# 🟢 Use the active production model name
+MODEL_NAME = "gemini-2.5-flash"
 
 
 # --- Pydantic Schemas ---
-
 class ParsedTransactionResult(BaseModel):
     clean_merchant: str
     amount: float
@@ -46,78 +52,61 @@ class ParsedTransactionResult(BaseModel):
     confidence: float
     summary_note: str
 
-
 class GeminiParsedTransaction(BaseModel):
     merchant: str
     amount: float
     category: str = "Uncategorized"
 
-
 class ChatRequest(BaseModel):
     message: str
-
 
 class ChatResponse(BaseModel):
     reply: str
 
 
-# --- Direct REST Transport Helper (Bypasses gRPC OAuth 401 Bug) ---
-
-def call_gemini_rest(
+# --- Vertex AI Caller ---
+def call_gemini_sdk(
     prompt: str,
     image_bytes: Optional[bytes] = None,
     json_schema: Optional[dict] = None,
     system_instruction: Optional[str] = None
 ) -> str:
     """
-    Direct REST caller using x-goog-api-key HTTP header.
-    Bypasses google-genai gRPC library OAuth token negotiation for AQ keys.
+    Executes Gemini via the official google-genai SDK,
+    authenticating natively via GOOGLE_APPLICATION_CREDENTIALS.
     """
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": api_key
-    }
-
-    parts = []
+    contents = []
     if image_bytes:
-        b64_img = base64.b64encode(image_bytes).decode("utf-8")
-        parts.append({
-            "inline_data": {
-                "mime_type": "image/jpeg",
-                "data": b64_img
-            }
-        })
-    parts.append({"text": prompt})
+        contents.append(
+            types.Part.from_bytes(
+                data=image_bytes,
+                mime_type="image/jpeg"
+            )
+        )
+    contents.append(prompt)
 
-    payload = {"contents": [{"parts": parts}]}
+    config = types.GenerateContentConfig()
 
     if system_instruction:
-        payload["systemInstruction"] = {
-            "parts": [{"text": system_instruction}]
-        }
+        config.system_instruction = system_instruction
 
     if json_schema:
-        payload["generationConfig"] = {
-            "response_mime_type": "application/json",
-            "response_schema": json_schema
-        }
+        config.response_mime_type = "application/json"
+        config.response_schema = json_schema
 
-    response = requests.post(url, headers=headers, json=payload, timeout=30)
-
-    if response.status_code != 200:
-        logger.error(f"Gemini REST Error ({response.status_code}): {response.text}")
-        raise Exception(f"Gemini API returned status {response.status_code}: {response.text}")
-
-    res_data = response.json()
     try:
-        return res_data['candidates'][0]['content']['parts'][0]['text']
-    except (KeyError, IndexError):
-        return ""
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=contents,
+            config=config
+        )
+        return response.text or ""
+    except Exception as e:
+        logger.error(f"Gemini SDK Execution Error: {e}")
+        raise Exception(f"Gemini API Error: {str(e)}")
 
 
 # --- Helper Functions (OCR & Amount Normalizer) ---
-
 def sanitize_amount(raw_val_str: str) -> Optional[Decimal]:
     if not raw_val_str:
         return None
@@ -133,7 +122,6 @@ def sanitize_amount(raw_val_str: str) -> Optional[Decimal]:
     except ValueError:
         return None
 
-
 def extract_text_from_image_bytes(image_bytes: bytes) -> str:
     try:
         prompt = """
@@ -143,16 +131,14 @@ def extract_text_from_image_bytes(image_bytes: bytes) -> str:
         - Carefully extract all numbers, currency symbols, and total amounts.
         - Ensure decimal points are accurately preserved (e.g., $5.75 must be extracted as 5.75, not 575 or 57.00).
         """
-        return call_gemini_rest(prompt=prompt, image_bytes=image_bytes)
+        return call_gemini_sdk(prompt=prompt, image_bytes=image_bytes)
     except Exception as e:
         logger.error(f"Error executing Gemini Vision extraction: {e}")
         return ""
 
-
 def parse_khqr_receipt(text: str):
     amount = None
 
-    # Flexible amount regex for KHQR, ABA, and Telegram receipts
     amount_match = re.search(
         r'(?:amount|total|paid|sum|trx\s*amount)?\s*:?\s*[\-—\+]?\s*\$?\s*(\d+(?:[\.\,]\d{1,2})?)\s*(?:USD|\$|KHR|៛)?',
         text, re.IGNORECASE
@@ -195,7 +181,6 @@ def parse_khqr_receipt(text: str):
 
 
 # --- Unified Processor Function ---
-
 def process_transaction_input(
         user_id: int,
         raw_text: str = "",
@@ -212,7 +197,6 @@ def process_transaction_input(
     raw_name = "UNKNOWN MERCHANT"
     raw_account_num = None
 
-    # Always attempt receipt parsing if an image was supplied OR receipt keywords exist
     is_receipt = image_bytes is not None or any(
         k in raw_text.lower() for k in ["transfer to", "paid to", "from account", "trx id", "bakong", "transfer"]
     )
@@ -235,7 +219,6 @@ def process_transaction_input(
             CRITICAL DECIMAL INSTRUCTIONS:
             - Parse the amount accurately as a float.
             - If the text specifies '5.75', output exactly 5.75.
-            - NEVER convert '5.75' into 57.00, 575.00, or round it to integer values.
             """
 
             json_schema = {
@@ -248,7 +231,7 @@ def process_transaction_input(
                 "required": ["merchant", "amount"]
             }
 
-            resp_text = call_gemini_rest(prompt=prompt, json_schema=json_schema)
+            resp_text = call_gemini_sdk(prompt=prompt, json_schema=json_schema)
             parsed = GeminiParsedTransaction.model_validate_json(resp_text)
 
             parsed_amt = parsed.amount
@@ -263,7 +246,6 @@ def process_transaction_input(
     if not amount or amount <= 0:
         return "⚠️ Could not parse transaction amount. Please specify like: 'Spent $5.50 on Coffee'."
 
-    # Database Mutations
     with Session(engine) as session:
         user_accounts = session.exec(
             select(Account).where(Account.user_id == user_id, Account.is_active == True).order_by(Account.id)
@@ -348,36 +330,7 @@ def process_transaction_input(
             return f"📥 Staged ${amount:.2f} for '{raw_name}' in Pending Inbox!"
 
 
-# --- Tool Declarations for UI Chat Agent ---
-
-def create_transaction_tool(
-        amount: float,
-        category_name: str,
-        account_name: str,
-        transaction_type: str = "expense",
-        description: str = "Logged via AI Assistant"
-) -> str:
-    return "Transaction intent captured"
-
-
-def get_recent_transactions_tool(limit: int = 5) -> str:
-    return "Fetch transaction history intent captured"
-
-
-def get_spending_summary_tool(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        category_name: Optional[str] = None
-) -> str:
-    return "Spending summary intent captured"
-
-
-def get_budget_status_tool() -> str:
-    return "Budget status intent captured"
-
-
 # --- REST API Endpoints ---
-
 @router.post("/parse-text", response_model=ParsedTransactionResult)
 def parse_natural_language_transaction(
         session: SessionDep,
@@ -396,7 +349,7 @@ def parse_natural_language_transaction(
 
     Instructions:
     1. Extract clean merchant name.
-    2. Extract exact float amount. If '5.75', return 5.75. Do NOT convert to 57.00.
+    2. Extract exact float amount.
     3. Pick best category name.
     4. Format transaction_date as YYYY-MM-DD.
     """
@@ -417,11 +370,10 @@ def parse_natural_language_transaction(
     }
 
     try:
-        resp_text = call_gemini_rest(prompt=prompt, json_schema=json_schema)
+        resp_text = call_gemini_sdk(prompt=prompt, json_schema=json_schema)
         return ParsedTransactionResult.model_validate_json(resp_text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini parsing error: {str(e)}")
-
 
 @router.post("/scan-receipt", response_model=ParsedTransactionResult)
 async def scan_receipt_image(
@@ -443,9 +395,6 @@ async def scan_receipt_image(
     Extract transaction details from this image.
     Allowed Category Names: {valid_categories}
     Current Date: {date.today().strftime('%Y-%m-%d')}
-
-    DECIMAL ACCURACY RULE:
-    - Extract the exact amount as float (e.g. 5.75). Do NOT shift decimal places to 57.00 or 575.00.
     """
 
     json_schema = {
@@ -464,11 +413,10 @@ async def scan_receipt_image(
     }
 
     try:
-        resp_text = call_gemini_rest(prompt=prompt, image_bytes=image_bytes, json_schema=json_schema)
+        resp_text = call_gemini_sdk(prompt=prompt, image_bytes=image_bytes, json_schema=json_schema)
         return ParsedTransactionResult.model_validate_json(resp_text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini Vision error: {str(e)}")
-
 
 @router.post("/chat", response_model=ChatResponse)
 def handle_ui_chat_assistant(
@@ -506,12 +454,11 @@ def handle_ui_chat_assistant(
         5. For standard questions or balance queries, respond directly as normal text.
         """
 
-        response_text = call_gemini_rest(
+        response_text = call_gemini_sdk(
             prompt=payload.message,
             system_instruction=system_instruction
         )
 
-        # Handle tool executions if Gemini returns structured tool JSON
         if "{" in response_text and "tool" in response_text:
             try:
                 import json
