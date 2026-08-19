@@ -1,12 +1,13 @@
 import io
 import os
 import re
+import base64
 import logging
+import requests
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import Optional, List
 
-# PyTesseract and PIL removed here
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
@@ -20,22 +21,17 @@ from models import (
 from .auth import get_current_user
 from .notification import check_and_trigger_notifications
 
-from google import genai
-from google.genai import types
-
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["AI Engine"])
 
-api_key = os.getenv("GEMINI_API_KEY")
+api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+
 if not api_key:
-    raise ValueError("GEMINI_API_KEY is missing from environment variables!")
+    raise ValueError("API key is missing from environment variables!")
 
-client = genai.Client(api_key=api_key)
-
-# 🟢 Left EXACTLY as you had it so the AI Assistant doesn't break
-MODEL_NAME = "gemini-3.5-flash"
+MODEL_NAME = "gemini-3.6-flash"
 
 
 # --- Pydantic Schemas ---
@@ -65,24 +61,72 @@ class ChatResponse(BaseModel):
     reply: str
 
 
+# --- Direct REST Transport Helper (Bypasses gRPC OAuth 401 Bug) ---
+
+def call_gemini_rest(
+    prompt: str,
+    image_bytes: Optional[bytes] = None,
+    json_schema: Optional[dict] = None,
+    system_instruction: Optional[str] = None
+) -> str:
+    """
+    Direct REST caller using x-goog-api-key HTTP header.
+    Bypasses google-genai gRPC library OAuth token negotiation for AQ keys.
+    """
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key
+    }
+
+    parts = []
+    if image_bytes:
+        b64_img = base64.b64encode(image_bytes).decode("utf-8")
+        parts.append({
+            "inline_data": {
+                "mime_type": "image/jpeg",
+                "data": b64_img
+            }
+        })
+    parts.append({"text": prompt})
+
+    payload = {"contents": [{"parts": parts}]}
+
+    if system_instruction:
+        payload["systemInstruction"] = {
+            "parts": [{"text": system_instruction}]
+        }
+
+    if json_schema:
+        payload["generationConfig"] = {
+            "response_mime_type": "application/json",
+            "response_schema": json_schema
+        }
+
+    response = requests.post(url, headers=headers, json=payload, timeout=30)
+
+    if response.status_code != 200:
+        logger.error(f"Gemini REST Error ({response.status_code}): {response.text}")
+        raise Exception(f"Gemini API returned status {response.status_code}: {response.text}")
+
+    res_data = response.json()
+    try:
+        return res_data['candidates'][0]['content']['parts'][0]['text']
+    except (KeyError, IndexError):
+        return ""
+
+
 # --- Helper Functions (OCR & Amount Normalizer) ---
 
 def sanitize_amount(raw_val_str: str) -> Optional[Decimal]:
-    """
-    Guarantees decimal accuracy. Prevents 5.75 from becoming 575 or 57.00.
-    """
     if not raw_val_str:
         return None
 
-    # Replace common OCR misreads (dots, commas, symbols)
     clean_str = raw_val_str.replace('·', '.').replace(',', '.').strip()
-
-    # Extract only valid numeric components
-    match = re.search(r'(\d+(?:\.\d+ fractures)?)', clean_str)
+    match = re.search(r'(\d+(?:\.\d+)?)', clean_str)
 
     try:
         val = float(clean_str)
-        # If no dot was present and amount is abnormally large without being an even hundred (e.g. 575 vs 500)
         if "." not in raw_val_str and val > 100 and val % 100 != 0:
             val = val / 100.0
         return Decimal(str(round(val, 2)))
@@ -90,12 +134,8 @@ def sanitize_amount(raw_val_str: str) -> Optional[Decimal]:
         return None
 
 
-# 🟢 ONLY THIS FUNCTION CHANGED to fix your image amounts
 def extract_text_from_image_bytes(image_bytes: bytes) -> str:
     try:
-        # Pass raw image bytes directly to Gemini instead of Tesseract
-        image = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
-
         prompt = """
         Extract all raw text from this receipt or payment screenshot verbatim.
 
@@ -103,12 +143,7 @@ def extract_text_from_image_bytes(image_bytes: bytes) -> str:
         - Carefully extract all numbers, currency symbols, and total amounts.
         - Ensure decimal points are accurately preserved (e.g., $5.75 must be extracted as 5.75, not 575 or 57.00).
         """
-
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[prompt, image]
-        )
-        return response.text or ""
+        return call_gemini_rest(prompt=prompt, image_bytes=image_bytes)
     except Exception as e:
         logger.error(f"Error executing Gemini Vision extraction: {e}")
         return ""
@@ -117,23 +152,27 @@ def extract_text_from_image_bytes(image_bytes: bytes) -> str:
 def parse_khqr_receipt(text: str):
     amount = None
 
-    # 🟢 EXACT REGEX FIX FOR KHQR RECEIPTS & TELEGRAM PASTES
-    # Captures explicit decimal patterns like 5.75, $5.75, 5,75 USD
-    amount_match = re.search(r'[\-—\+]?\s*(\d+(?:[\.\,]\d{1,2})?)\s*(?:USD|\$|KHR|៛)?', text, re.IGNORECASE)
+    # Flexible amount regex for KHQR, ABA, and Telegram receipts
+    amount_match = re.search(
+        r'(?:amount|total|paid|sum|trx\s*amount)?\s*:?\s*[\-—\+]?\s*\$?\s*(\d+(?:[\.\,]\d{1,2})?)\s*(?:USD|\$|KHR|៛)?',
+        text, re.IGNORECASE
+    )
     if amount_match:
         raw_num = amount_match.group(1).replace(',', '.')
-        if '.' in raw_num:
-            amount = Decimal(str(round(float(raw_num), 2)))
-        else:
-            # If explicit decimal was omitted, check if it's 3 digits (e.g. 575 -> 5.75)
+        try:
             val = float(raw_num)
-            if val > 100 and val % 10 != 0 and val < 10000:
-                val = val / 100.0
-            amount = Decimal(str(round(val, 2)))
+            if '.' in raw_num:
+                amount = Decimal(str(round(val, 2)))
+            else:
+                if val > 100 and val % 10 != 0 and val < 10000:
+                    val = val / 100.0
+                amount = Decimal(str(round(val, 2)))
+        except ValueError:
+            pass
 
     raw_name = "UNKNOWN MERCHANT"
     name_match = re.search(
-        r'(?:transfer\s+to|paid\s+to|beneficiary|receiver|merchant|@)\s*:?\s*([A-Za-z0-9\s\.\&\-]+)',
+        r'(?:transfer\s+to|paid\s+to|to\s+account|beneficiary|receiver|merchant|to)\s*:?\s*([A-Za-z0-9\s\.\&\-]+)',
         text, re.IGNORECASE
     )
 
@@ -165,6 +204,7 @@ def process_transaction_input(
 ) -> str:
     if image_bytes:
         ocr_text = extract_text_from_image_bytes(image_bytes)
+        logger.info(f"🔍 [OCR Extracted Text]: {ocr_text}")
         if ocr_text:
             raw_text = ocr_text
 
@@ -172,7 +212,10 @@ def process_transaction_input(
     raw_name = "UNKNOWN MERCHANT"
     raw_account_num = None
 
-    is_receipt = any(k in raw_text.lower() for k in ["transfer to", "paid to", "from account", "trx id", "bakong"])
+    # Always attempt receipt parsing if an image was supplied OR receipt keywords exist
+    is_receipt = image_bytes is not None or any(
+        k in raw_text.lower() for k in ["transfer to", "paid to", "from account", "trx id", "bakong", "transfer"]
+    )
     if is_receipt:
         amount, raw_name, raw_account_num = parse_khqr_receipt(raw_text)
 
@@ -195,18 +238,19 @@ def process_transaction_input(
             - NEVER convert '5.75' into 57.00, 575.00, or round it to integer values.
             """
 
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=GeminiParsedTransaction,
-                ),
-            )
+            json_schema = {
+                "type": "OBJECT",
+                "properties": {
+                    "merchant": {"type": "STRING"},
+                    "amount": {"type": "NUMBER"},
+                    "category": {"type": "STRING"}
+                },
+                "required": ["merchant", "amount"]
+            }
 
-            parsed = GeminiParsedTransaction.model_validate_json(response.text)
+            resp_text = call_gemini_rest(prompt=prompt, json_schema=json_schema)
+            parsed = GeminiParsedTransaction.model_validate_json(resp_text)
 
-            # Additional safety check on Gemini output
             parsed_amt = parsed.amount
             if parsed_amt > 50 and "." not in str(raw_text) and "5.75" in raw_text:
                 parsed_amt = 5.75
@@ -357,16 +401,24 @@ def parse_natural_language_transaction(
     4. Format transaction_date as YYYY-MM-DD.
     """
 
+    json_schema = {
+        "type": "OBJECT",
+        "properties": {
+            "clean_merchant": {"type": "STRING"},
+            "amount": {"type": "NUMBER"},
+            "currency": {"type": "STRING"},
+            "suggested_category_name": {"type": "STRING"},
+            "transaction_type": {"type": "STRING"},
+            "transaction_date": {"type": "STRING"},
+            "confidence": {"type": "NUMBER"},
+            "summary_note": {"type": "STRING"}
+        },
+        "required": ["clean_merchant", "amount", "suggested_category_name", "transaction_date"]
+    }
+
     try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=ParsedTransactionResult,
-            ),
-        )
-        return ParsedTransactionResult.model_validate_json(response.text)
+        resp_text = call_gemini_rest(prompt=prompt, json_schema=json_schema)
+        return ParsedTransactionResult.model_validate_json(resp_text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini parsing error: {str(e)}")
 
@@ -396,22 +448,24 @@ async def scan_receipt_image(
     - Extract the exact amount as float (e.g. 5.75). Do NOT shift decimal places to 57.00 or 575.00.
     """
 
+    json_schema = {
+        "type": "OBJECT",
+        "properties": {
+            "clean_merchant": {"type": "STRING"},
+            "amount": {"type": "NUMBER"},
+            "currency": {"type": "STRING"},
+            "suggested_category_name": {"type": "STRING"},
+            "transaction_type": {"type": "STRING"},
+            "transaction_date": {"type": "STRING"},
+            "confidence": {"type": "NUMBER"},
+            "summary_note": {"type": "STRING"}
+        },
+        "required": ["clean_merchant", "amount", "suggested_category_name", "transaction_date"]
+    }
+
     try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[
-                types.Part.from_bytes(
-                    data=image_bytes,
-                    mime_type=file.content_type or "image/jpeg",
-                ),
-                prompt
-            ],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=ParsedTransactionResult,
-            ),
-        )
-        return ParsedTransactionResult.model_validate_json(response.text)
+        resp_text = call_gemini_rest(prompt=prompt, image_bytes=image_bytes, json_schema=json_schema)
+        return ParsedTransactionResult.model_validate_json(resp_text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini Vision error: {str(e)}")
 
@@ -444,154 +498,141 @@ def handle_ui_chat_assistant(
         - Connected Accounts & Balances: {acc_summary if acc_summary else "None"}
         - Available Categories: {cat_names if cat_names else "None"}
 
-        CRITICAL INSTRUCTIONS:
-        1. When the user mentions spending, earning, or logging money, call `create_transaction_tool`.
-        2. When the user asks to see past or recent transactions, call `get_recent_transactions_tool`.
-        3. When the user asks how much they spent, call `get_spending_summary_tool`.
-        4. When the user asks about budgets or remaining limits, call `get_budget_status_tool`.
-        5. For direct questions about account balances, answer directly using LIVE USER FINANCIAL SNAPSHOT.
+        CRITICAL ROUTING INSTRUCTIONS:
+        1. When user asks to see past or recent transactions, output JSON: {{"tool": "get_recent_transactions_tool", "limit": 5}}
+        2. When user asks how much they spent in a timeframe or category, output JSON: {{"tool": "get_spending_summary_tool", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "category_name": "..."}}
+        3. When user asks about budget status or limits, output JSON: {{"tool": "get_budget_status_tool"}}
+        4. When user mentions spending, earning, or logging money, output JSON: {{"tool": "create_transaction_tool", "amount": 0.0, "category_name": "...", "account_name": "...", "transaction_type": "expense"}}
+        5. For standard questions or balance queries, respond directly as normal text.
         """
 
-        tool_config = types.ToolConfig(
-            function_calling_config=types.FunctionCallingConfig(mode="AUTO")
+        response_text = call_gemini_rest(
+            prompt=payload.message,
+            system_instruction=system_instruction
         )
 
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=payload.message,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                tools=[
-                    create_transaction_tool,
-                    get_recent_transactions_tool,
-                    get_spending_summary_tool,
-                    get_budget_status_tool,
-                ],
-                tool_config=tool_config,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-            ),
-        )
+        # Handle tool executions if Gemini returns structured tool JSON
+        if "{" in response_text and "tool" in response_text:
+            try:
+                import json
+                clean_json = response_text[response_text.find("{"):response_text.rfind("}") + 1]
+                tool_payload = json.loads(clean_json)
+                call_name = tool_payload.get("tool", "")
 
-        function_calls = getattr(response, "function_calls", None)
+                if call_name == "get_recent_transactions_tool":
+                    query_limit = min(int(tool_payload.get("limit", 5)), 20)
+                    recent_txs = session.exec(
+                        select(Transaction)
+                        .where(Transaction.user_id == current_user.id)
+                        .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+                        .limit(query_limit)
+                    ).all()
 
-        if function_calls and len(function_calls) > 0:
-            call = function_calls[0]
-            call_name = getattr(call, "name", "")
-            args = call.args or {}
+                    if not recent_txs:
+                        return ChatResponse(reply="📜 You don't have any logged transactions yet.")
 
-            if call_name == "get_recent_transactions_tool":
-                query_limit = min(int(args.get("limit", 5)), 20)
-                recent_txs = session.exec(
-                    select(Transaction)
-                    .where(Transaction.user_id == current_user.id)
-                    .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
-                    .limit(query_limit)
-                ).all()
+                    formatted_lines = [
+                        f"• **{tx.transaction_date}**: {'+' if tx.type == 'income' else '-'}${abs(tx.amount):.2f} (*{tx.type.capitalize()}*) — {tx.description or 'No desc'}"
+                        for tx in recent_txs
+                    ]
+                    return ChatResponse(reply="📜 **Recent Transactions:**\n\n" + "\n".join(formatted_lines))
 
-                if not recent_txs:
-                    return ChatResponse(reply="📜 You don't have any logged transactions yet.")
+                elif call_name == "get_spending_summary_tool":
+                    start_str = tool_payload.get("start_date") or date.today().replace(day=1).strftime("%Y-%m-%d")
+                    end_str = tool_payload.get("end_date") or date.today().strftime("%Y-%m-%d")
+                    cat_name_arg = str(tool_payload.get("category_name", "")).strip()
 
-                formatted_lines = [
-                    f"• **{tx.transaction_date}**: {'+' if tx.type == 'income' else '-'}${abs(tx.amount):.2f} (*{tx.type.capitalize()}*) — {tx.description or 'No desc'}"
-                    for tx in recent_txs
-                ]
-                return ChatResponse(reply="📜 **Recent Transactions:**\n\n" + "\n".join(formatted_lines))
-
-            elif call_name == "get_spending_summary_tool":
-                start_str = args.get("start_date") or date.today().replace(day=1).strftime("%Y-%m-%d")
-                end_str = args.get("end_date") or date.today().strftime("%Y-%m-%d")
-                cat_name_arg = str(args.get("category_name", "")).strip()
-
-                query = select(Transaction).where(
-                    Transaction.user_id == current_user.id,
-                    Transaction.type == "expense",
-                    Transaction.transaction_date >= start_str,
-                    Transaction.transaction_date <= end_str,
-                )
-
-                matched_cat = None
-                if cat_name_arg and categories:
-                    for c in categories:
-                        if cat_name_arg.lower() in c.name.lower():
-                            matched_cat = c
-                            break
-                    if matched_cat:
-                        query = query.where(Transaction.category_id == matched_cat.id)
-
-                txs = session.exec(query).all()
-                total_spent = sum(abs(float(t.amount)) for t in txs)
-
-                if matched_cat:
-                    return ChatResponse(
-                        reply=f"📊 Total spent on **'{matched_cat.name}'** ({start_str} to {end_str}): **${total_spent:.2f}** ({len(txs)} txs)."
+                    query = select(Transaction).where(
+                        Transaction.user_id == current_user.id,
+                        Transaction.type == "expense",
+                        Transaction.transaction_date >= start_str,
+                        Transaction.transaction_date <= end_str,
                     )
-                return ChatResponse(
-                    reply=f"📊 Total expenses ({start_str} to {end_str}): **${total_spent:.2f}** ({len(txs)} txs)."
-                )
 
-            elif call_name == "get_budget_status_tool":
-                user_budgets = session.exec(
-                    select(Budget).where(Budget.user_id == current_user.id)
-                ).all()
-
-                if not user_budgets:
-                    return ChatResponse(reply="🎯 You don't have any active budgets set up yet.")
-
-                budget_lines = []
-                for b in user_budgets:
-                    cat = session.get(Category, b.category_id) if getattr(b, 'category_id', None) else None
-                    cat_title = cat.name if cat else "General"
-                    budget_lines.append(f"• **{cat_title}**: ${b.monthly_limit:.2f} limit")
-
-                return ChatResponse(reply="🎯 **Your Active Budgets:**\n\n" + "\n".join(budget_lines))
-
-            elif call_name == "create_transaction_tool":
-                amount_val = float(args.get("amount", 0.0))
-                cat_name_arg = str(args.get("category_name", "")).strip()
-                acc_name_arg = str(args.get("account_name", "")).strip()
-                tx_type_arg = str(args.get("transaction_type", "expense")).lower()
-
-                if amount_val > 0:
-                    matched_cat = next((c for c in categories if cat_name_arg.lower() in c.name.lower()),
-                                       None) if categories else None
-                    matched_acc = next((a for a in accounts if acc_name_arg.lower() in a.account_name.lower()),
-                                       accounts[0]) if accounts else None
-
-                    if matched_acc:
-                        new_tx = Transaction(
-                            user_id=current_user.id,
-                            account_id=matched_acc.id,
-                            category_id=matched_cat.id if matched_cat else None,
-                            amount=Decimal(str(amount_val)),
-                            type=tx_type_arg,
-                            description=f"Logged via AI ({cat_name_arg or 'General'})",
-                            transaction_date=date.today(),
-                        )
-
-                        if tx_type_arg == "expense":
-                            matched_acc.balance -= Decimal(str(amount_val))
-                        else:
-                            matched_acc.balance += Decimal(str(amount_val))
-
-                        session.add(new_tx)
-                        session.add(matched_acc)
-                        session.commit()
-
+                    matched_cat = None
+                    if cat_name_arg and categories:
+                        for c in categories:
+                            if cat_name_arg.lower() in c.name.lower():
+                                matched_cat = c
+                                break
                         if matched_cat:
-                            check_and_trigger_notifications(
+                            query = query.where(Transaction.category_id == matched_cat.id)
+
+                    txs = session.exec(query).all()
+                    total_spent = sum(abs(float(t.amount)) for t in txs)
+
+                    if matched_cat:
+                        return ChatResponse(
+                            reply=f"📊 Total spent on **'{matched_cat.name}'** ({start_str} to {end_str}): **${total_spent:.2f}** ({len(txs)} txs)."
+                        )
+                    return ChatResponse(
+                        reply=f"📊 Total expenses ({start_str} to {end_str}): **${total_spent:.2f}** ({len(txs)} txs)."
+                    )
+
+                elif call_name == "get_budget_status_tool":
+                    user_budgets = session.exec(
+                        select(Budget).where(Budget.user_id == current_user.id)
+                    ).all()
+
+                    if not user_budgets:
+                        return ChatResponse(reply="🎯 You don't have any active budgets set up yet.")
+
+                    budget_lines = []
+                    for b in user_budgets:
+                        cat = session.get(Category, b.category_id) if getattr(b, 'category_id', None) else None
+                        cat_title = cat.name if cat else "General"
+                        budget_lines.append(f"• **{cat_title}**: ${b.monthly_limit:.2f} limit")
+
+                    return ChatResponse(reply="🎯 **Your Active Budgets:**\n\n" + "\n".join(budget_lines))
+
+                elif call_name == "create_transaction_tool":
+                    amount_val = float(tool_payload.get("amount", 0.0))
+                    cat_name_arg = str(tool_payload.get("category_name", "")).strip()
+                    acc_name_arg = str(tool_payload.get("account_name", "")).strip()
+                    tx_type_arg = str(tool_payload.get("transaction_type", "expense")).lower()
+
+                    if amount_val > 0:
+                        matched_cat = next((c for c in categories if cat_name_arg.lower() in c.name.lower()),
+                                           None) if categories else None
+                        matched_acc = next((a for a in accounts if acc_name_arg.lower() in a.account_name.lower()),
+                                           accounts[0]) if accounts else None
+
+                        if matched_acc:
+                            new_tx = Transaction(
                                 user_id=current_user.id,
                                 account_id=matched_acc.id,
-                                category_id=matched_cat.id,
-                                session=session,
-                                tx_date=date.today()
+                                category_id=matched_cat.id if matched_cat else None,
+                                amount=Decimal(str(amount_val)),
+                                type=tx_type_arg,
+                                description=f"Logged via AI ({cat_name_arg or 'General'})",
+                                transaction_date=date.today(),
                             )
 
-                        return ChatResponse(
-                            reply=f"✅ **Logged**: **${amount_val:.2f}** under **'{matched_cat.name if matched_cat else 'General'}'** using **{matched_acc.account_name}**."
-                        )
+                            if tx_type_arg == "expense":
+                                matched_acc.balance -= Decimal(str(amount_val))
+                            else:
+                                matched_acc.balance += Decimal(str(amount_val))
 
-        reply_text = getattr(response, "text", None) or "I processed your request."
-        return ChatResponse(reply=reply_text)
+                            session.add(new_tx)
+                            session.add(matched_acc)
+                            session.commit()
+
+                            if matched_cat:
+                                check_and_trigger_notifications(
+                                    user_id=current_user.id,
+                                    account_id=matched_acc.id,
+                                    category_id=matched_cat.id,
+                                    session=session,
+                                    tx_date=date.today()
+                                )
+
+                            return ChatResponse(
+                                reply=f"✅ **Logged**: **${amount_val:.2f}** under **'{matched_cat.name if matched_cat else 'General'}'** using **{matched_acc.account_name}**."
+                            )
+            except Exception as parse_err:
+                logger.warning(f"Tool execution JSON parse failed, returning raw response: {parse_err}")
+
+        return ChatResponse(reply=response_text)
 
     except Exception as e:
         session.rollback()
