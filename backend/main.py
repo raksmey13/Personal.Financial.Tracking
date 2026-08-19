@@ -152,16 +152,14 @@ async def lifespan(app: FastAPI):
         tg_app.add_handler(CommandHandler("start", handle_start_command))
         tg_app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), handle_telegram_receipt))
 
-        await tg_app.initialize()
-        logger.info("🤖 Telegram Bot initialized for Webhooks!")
+        async with tg_app:
+            await tg_app.start()
+            logger.info("🤖 Telegram Bot initialized and running with Webhooks!")
+            yield
+            await tg_app.stop()
     else:
         logger.warning("⚠️ Warning: TELEGRAM_BOT_TOKEN not found in environment variables.")
-
-    yield
-
-    if tg_app:
-        logger.info("Shutting down Telegram Bot...")
-        await tg_app.shutdown()
+        yield
 
 
 app = FastAPI(lifespan=lifespan, title="Personal Finance Tracker API")
