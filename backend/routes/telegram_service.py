@@ -41,7 +41,7 @@ def process_incoming_telegram_message(
         raw_text: str,
         user_id: int,
         image_bytes: Optional[bytes] = None
-) -> str:
+) -> dict: # 🟢 Updated return type to dict to match ai_engine changes
     """
     Unified router for Telegram incoming payloads:
     1. Image / Receipt Upload -> Processed via OCR & Gemini Vision
@@ -71,7 +71,8 @@ def process_incoming_telegram_message(
                         session=session,
                         current_user=db_user
                     )
-                    return response.reply
+                    # 🟢 Wrapped string reply into a dict to maintain consistent architecture
+                    return {"status": "success", "message": response.reply}
         except Exception as e:
             logger.error(f"Error executing Telegram AI Chat Assistant query: {e}")
             # Fall back to standard transaction parsing if chat assistant encounters an issue

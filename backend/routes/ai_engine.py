@@ -196,7 +196,7 @@ def parse_khqr_receipt(text: str):
     return amount, raw_name, raw_account_num
 
 
-# 🟢 Direct Vision Function with Exact Currency Detection (No Conversion)
+# 🟢 Direct Vision Function with Exact Currency Detection and Bank Guardrails
 def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal], str, str]:
     """
     Passes image bytes directly to Gemini Vision to extract exact amount, merchant name, and currency (USD or KHR).
@@ -207,6 +207,7 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
     CRITICAL EXTRACTION RULES:
     1. "merchant": Identify the recipient, seller, store, or vendor.
        - Check top header title, "Transfer to", "Paid To:", "Seller:", or "Terminal name:".
+       - NEVER output bank or platform branding as the merchant (e.g., "ABA BANK", "ABA", "WING", "CANADIA", "BAKONG", "ACLEDA", "PAYWAY").
        - NEVER use the "From account" name (that is the sender).
     2. "amount": Extract the exact transaction amount as a numeric float.
     3. "currency": Detect whether the currency is "USD" ($) or "KHR" (៛). Output "USD" or "KHR".
@@ -235,6 +236,12 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
 
         amt = Decimal(str(round(parsed.amount, 2))) if parsed.amount else None
         merchant_name = parsed.merchant.strip().upper() if parsed.merchant else "UNKNOWN MERCHANT"
+
+        # 🟢 Extra Python Guardrail: Reject bank names if model leaks them
+        FORBIDDEN_BANKS = ["ABA BANK", "ABA", "WING", "BAKONG", "CANADIA BANK", "ACLEDA BANK", "PAYWAY"]
+        if any(bank in merchant_name for bank in FORBIDDEN_BANKS):
+            merchant_name = "UNKNOWN MERCHANT"
+
         currency = getattr(parsed, 'currency', 'USD').upper()
         if "KHR" in currency or "៛" in currency:
             currency = "KHR"
@@ -253,7 +260,7 @@ def process_transaction_input(
         raw_text: str = "",
         image_bytes: Optional[bytes] = None,
         source: str = "telegram"
-) -> str:
+) -> dict:  # 🟢 Changed return type to dict to handle Telegram inline button responses
     amount = None
     raw_name = "UNKNOWN MERCHANT"
     raw_account_num = None
@@ -316,29 +323,52 @@ def process_transaction_input(
             logger.error(f"Gemini transaction processing error: {e}")
 
     if not amount or amount <= 0:
-        return "⚠️ Could not parse transaction amount. Please specify like: 'Spent $5.50 on Coffee'."
+        return {"status": "error",
+                "message": "⚠️ Could not parse transaction amount. Please specify like: 'Spent $5.50 on Coffee'."}
 
     # Set currency formatting symbol for responses
     symbol = "៛" if extracted_currency == "KHR" else "$"
 
     with Session(engine) as session:
-        user_accounts = session.exec(
-            select(Account).where(Account.user_id == user_id, Account.is_active == True).order_by(Account.id)
+        # Match user's account by extracted currency
+        matching_accounts = session.exec(
+            select(Account).where(
+                Account.user_id == user_id,
+                Account.is_active == True,
+                Account.currency == extracted_currency
+            )
         ).all()
 
-        if not user_accounts:
-            return "⚠️ No active financial accounts found."
+        if not matching_accounts:
+            # Fallback to all active accounts if no exact currency match exists
+            matching_accounts = session.exec(
+                select(Account).where(Account.user_id == user_id, Account.is_active == True)
+            ).all()
 
-        # 🟢 Match user's account by extracted currency (e.g., match KHR account for KHR receipts)
-        matched_account = next((a for a in user_accounts if a.currency.upper() == extracted_currency), user_accounts[0])
-        matched_account_id = matched_account.id
+        if not matching_accounts:
+            return {"status": "error", "message": "⚠️ No active financial accounts found."}
 
+        # Check for exact account number match
+        matched_account_id = None
         if raw_account_num:
-            db_acc = session.exec(
-                select(Account).where(Account.user_id == user_id, Account.account_name.contains(raw_account_num))
-            ).first()
+            db_acc = next((acc for acc in matching_accounts if raw_account_num in acc.account_name), None)
             if db_acc:
                 matched_account_id = db_acc.id
+
+        # 🟢 AMBIGUITY CHECK: Ask user via Telegram if multiple accounts exist and no exact match is found
+        if not matched_account_id and len(matching_accounts) > 1:
+            return {
+                "status": "needs_account_selection",
+                "amount": amount,
+                "merchant": raw_name,
+                "currency": extracted_currency,
+                "symbol": symbol,
+                "accounts": [{"id": acc.id, "name": acc.account_name, "balance": float(acc.balance)} for acc in
+                             matching_accounts]
+            }
+
+        # Single account or exact match found -> proceed normally
+        chosen_acc_id = matched_account_id or matching_accounts[0].id
 
         mapping = session.exec(
             select(BeneficiaryCategoryMap).where(
@@ -353,14 +383,14 @@ def process_transaction_input(
                 user_id=user_id,
                 amount=clean_amount,
                 category_id=mapping.category_id,
-                account_id=matched_account_id,
+                account_id=chosen_acc_id,
                 transaction_date=date.today(),
                 description=f"{source.capitalize()}: {raw_name}",
                 type="expense",
             )
             session.add(new_tx)
 
-            acc_obj = session.get(Account, matched_account_id)
+            acc_obj = session.get(Account, chosen_acc_id)
             if acc_obj:
                 acc_obj.balance -= clean_amount
                 session.add(acc_obj)
@@ -369,13 +399,14 @@ def process_transaction_input(
 
             check_and_trigger_notifications(
                 user_id=user_id,
-                account_id=matched_account_id,
+                account_id=chosen_acc_id,
                 category_id=mapping.category_id,
                 session=session,
                 tx_date=date.today()
             )
 
-            return f"✅ Auto-categorized {symbol}{clean_amount:.2f} under Category #{mapping.category_id} ({raw_name})."
+            return {"status": "success",
+                    "message": f"✅ Auto-categorized {symbol}{clean_amount:.2f} under Category #{mapping.category_id} ({raw_name})."}
 
         else:
             pending = PendingTransaction(
@@ -383,7 +414,7 @@ def process_transaction_input(
                 raw_beneficiary_name=raw_name,
                 amount=amount,
                 transaction_date=date.today(),
-                account_id=matched_account_id,
+                account_id=chosen_acc_id,
                 source=source,
                 status="pending",
             )
@@ -405,7 +436,7 @@ def process_transaction_input(
             ))
             session.commit()
 
-            return f"📥 Staged {symbol}{amount:.2f} for '{raw_name}' in Pending Inbox!"
+            return {"status": "success", "message": f"📥 Staged {symbol}{amount:.2f} for '{raw_name}' in Pending Inbox!"}
 
 
 # --- REST API Endpoints ---
