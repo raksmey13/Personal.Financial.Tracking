@@ -38,7 +38,7 @@ const AnalyticsReport = () => {
 
   // --- Form Filter States ---
   const [filterType, setFilterType] = useState('expenses');
-  const [currencyTarget, setCurrencyTarget] = useState('all'); // 🟢 Added Currency Filter
+  const [currencyTarget, setCurrencyTarget] = useState('all');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [dateRangeDropdown, setDateRangeDropdown] = useState('This Month');
@@ -52,14 +52,15 @@ const AnalyticsReport = () => {
   // Tab 2 Specific
   const [creditCardToggle, setCreditCardToggle] = useState(false);
 
-  // Tab 3 Specific
+  // Tab 3 Specific (🟢 Added forecastSteps State)
   const [futurePeriod, setFuturePeriod] = useState('Month');
+  const [forecastSteps, setForecastSteps] = useState(6);
   const [includePredictiveFixed, setIncludePredictiveFixed] = useState(false);
 
   // Report Render Triggers
   const [showReport, setShowReport] = useState(false);
 
-  // 🟢 Helper Function for Multi-Currency Formatting
+  // Helper Function for Multi-Currency Formatting
   const formatMoney = (val, currency = "USD") => {
     const isKHR = String(currency).toUpperCase().trim() === "KHR";
     const symbol = isKHR ? "៛" : "$";
@@ -70,6 +71,15 @@ const AnalyticsReport = () => {
 
     return `${val < 0 ? '-' : ''}${symbol}${formatted}`;
   };
+
+  // Adjust default forecast steps when unit changes
+  useEffect(() => {
+    if (futurePeriod === 'Days') {
+      setForecastSteps(7); // Default to 7 Days (1 Week)
+    } else {
+      setForecastSteps(6); // Default to 6 Months
+    }
+  }, [futurePeriod]);
 
   // --- TIME BOUNDARY ENGINE MATRIX INITIALIZATION ---
   useEffect(() => {
@@ -117,7 +127,8 @@ const AnalyticsReport = () => {
         include_debts: activeTab === 'future' ? includePredictiveFixed : includeTransactions,
         depth: categoryDepth === 'Main Category' ? 'main' : 'sub',
         credit_card_rule: creditCardToggle ? 'timestamp' : 'payment',
-        forecast_unit: futurePeriod.toLowerCase()
+        forecast_unit: futurePeriod.toLowerCase(),
+        steps: forecastSteps // 🟢 Sent dynamic forecast steps parameter
       };
 
       const response = await analyticsAPI.getCustomReport(queryParams);
@@ -214,23 +225,49 @@ const AnalyticsReport = () => {
                   </label>
                 ))
               ) : (
-                ['Month', 'Days'].map((period) => (
-                  <label key={period} className="flex items-center gap-2 cursor-pointer font-bold text-gray-700">
-                    <input
-                      type="radio"
-                      name="futurePeriod"
-                      checked={futurePeriod === period}
-                      onChange={() => setFuturePeriod(period)}
-                      className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 cursor-pointer"
-                    />
-                    {period}
-                  </label>
-                ))
+                <div className="flex items-center gap-4">
+                  {['Month', 'Days'].map((period) => (
+                    <label key={period} className="flex items-center gap-2 cursor-pointer font-bold text-gray-700">
+                      <input
+                        type="radio"
+                        name="futurePeriod"
+                        checked={futurePeriod === period}
+                        onChange={() => setFuturePeriod(period)}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 cursor-pointer"
+                      />
+                      {period}
+                    </label>
+                  ))}
+
+                  {/* 🟢 NEW: Dynamic Horizon Step Count Selector */}
+                  <div className="flex items-center gap-1.5 ml-2">
+                    <span className="text-xs font-semibold text-gray-500">Horizon:</span>
+                    <select
+                      value={forecastSteps}
+                      onChange={(e) => setForecastSteps(Number(e.target.value))}
+                      className="p-1.5 bg-gray-50 border border-gray-300 rounded-lg font-bold text-xs text-gray-700 outline-none cursor-pointer"
+                    >
+                      {futurePeriod === 'Days' ? (
+                        <>
+                          <option value={7}>7 Days (1 Week)</option>
+                          <option value={14}>14 Days (2 Weeks)</option>
+                          <option value={30}>30 Days (1 Month)</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value={3}>3 Months</option>
+                          <option value={6}>6 Months</option>
+                          <option value={12}>12 Months (1 Year)</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                </div>
               )}
             </div>
           </div>
 
-          {/* 🟢 NEW: Currency Scope Filter Selector */}
+          {/* Currency Scope Filter Selector */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <span className="font-semibold text-gray-600 w-44 flex items-center gap-1.5">
               <FaCoins className="text-amber-500" /> Currency Scope:
@@ -245,7 +282,7 @@ const AnalyticsReport = () => {
                   key={c.val}
                   type="button"
                   onClick={() => setCurrencyTarget(c.val)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                     currencyTarget === c.val ? 'bg-blue-600 text-white shadow-xs' : 'text-gray-600 hover:text-gray-800'
                   }`}
                 >
