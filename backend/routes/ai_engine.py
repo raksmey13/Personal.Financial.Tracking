@@ -56,13 +56,16 @@ class ParsedTransactionResult(BaseModel):
     confidence: float
     summary_note: str
 
+
 class GeminiParsedTransaction(BaseModel):
     merchant: str
     amount: float
     category: str = "Uncategorized"
 
+
 class ChatRequest(BaseModel):
     message: str
+
 
 class ChatResponse(BaseModel):
     reply: str
@@ -70,10 +73,10 @@ class ChatResponse(BaseModel):
 
 # --- Vertex AI Caller ---
 def call_gemini_sdk(
-    prompt: str,
-    image_bytes: Optional[bytes] = None,
-    json_schema: Optional[dict] = None,
-    system_instruction: Optional[str] = None
+        prompt: str,
+        image_bytes: Optional[bytes] = None,
+        json_schema: Optional[dict] = None,
+        system_instruction: Optional[str] = None
 ) -> str:
     """
     Executes Gemini via the official google-genai SDK,
@@ -126,6 +129,7 @@ def sanitize_amount(raw_val_str: str) -> Optional[Decimal]:
     except ValueError:
         return None
 
+
 def extract_text_from_image_bytes(image_bytes: bytes) -> str:
     try:
         prompt = """
@@ -164,7 +168,7 @@ def parse_khqr_receipt(text: str):
 
     raw_name = "UNKNOWN MERCHANT"
 
-    # 🟢 FIX 1: Support Unicode (Khmer, Chinese, Latin) and common transfer labels (To, Paid To, Receiver, Beneficiary)
+    # Support Unicode (Khmer, Chinese, Latin) and common transfer labels (To, Paid To, Receiver, Beneficiary)
     name_match = re.search(
         r'(?:transfer\s+to|paid\s+to|to\s+account|beneficiary|receiver|merchant\s+name|merchant|to)\s*:?\s*([^\n\r]+)',
         text, re.IGNORECASE
@@ -173,7 +177,7 @@ def parse_khqr_receipt(text: str):
     if name_match:
         extracted = name_match.group(1).strip()
 
-        # 🟢 FIX 2: Safely remove trailing metadata keywords without wiping out the beneficiary name
+        # Safely remove trailing metadata keywords without wiping out the beneficiary name
         cleaned = re.sub(
             r'\b(TRX\.?\s*ID|ORIGINAL\s+AMOUNT|REFERENCE\s*#|TRANSACTION\s+DATE|REMARK|DATE)\b.*',
             '', extracted, flags=re.IGNORECASE
@@ -191,6 +195,51 @@ def parse_khqr_receipt(text: str):
     return amount, raw_name, raw_account_num
 
 
+# 🟢 NEW: Direct Vision Processing Function
+def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal], str]:
+    """
+    Passes image bytes directly to Gemini Vision to extract amount and merchant name visually.
+    """
+    prompt = """
+    Analyze this payment receipt or bank transfer screenshot visually.
+
+    CRITICAL EXTRACTION RULES:
+    1. "merchant": Identify the recipient, seller, store, or vendor.
+       - Look directly below the top logo icon / amount header first (e.g., store name, website, seller title).
+       - Also check fields like "Seller:", "Paid To:", "To:", "Beneficiary:", or "Terminal name:".
+       - NEVER use the "From account" or "Cardholder" name (that is the sender).
+    2. "amount": Extract the transaction amount as a numeric float.
+       - Look at the top main header amount (e.g., -2.00 USD -> 2.00).
+
+    Output JSON ONLY:
+    {
+      "merchant": "STRING",
+      "amount": NUMBER
+    }
+    """
+
+    json_schema = {
+        "type": "OBJECT",
+        "properties": {
+            "merchant": {"type": "STRING"},
+            "amount": {"type": "NUMBER"}
+        },
+        "required": ["merchant", "amount"]
+    }
+
+    try:
+        resp_text = call_gemini_sdk(prompt=prompt, image_bytes=image_bytes, json_schema=json_schema)
+        parsed = GeminiParsedTransaction.model_validate_json(resp_text)
+
+        amt = Decimal(str(round(parsed.amount, 2))) if parsed.amount else None
+        merchant_name = parsed.merchant.strip().upper() if parsed.merchant else "UNKNOWN MERCHANT"
+
+        return amt, merchant_name
+    except Exception as e:
+        logger.error(f"Direct vision extraction error: {e}")
+        return None, "UNKNOWN MERCHANT"
+
+
 # --- Unified Processor Function ---
 def process_transaction_input(
         user_id: int,
@@ -198,21 +247,22 @@ def process_transaction_input(
         image_bytes: Optional[bytes] = None,
         source: str = "telegram"
 ) -> str:
-    if image_bytes:
-        ocr_text = extract_text_from_image_bytes(image_bytes)
-        logger.info(f"🔍 [OCR Extracted Text]: {ocr_text}")
-        if ocr_text:
-            raw_text = ocr_text
-
     amount = None
     raw_name = "UNKNOWN MERCHANT"
     raw_account_num = None
 
-    is_receipt = image_bytes is not None or any(
-        k in raw_text.lower() for k in ["transfer to", "paid to", "from account", "trx id", "bakong", "transfer"]
-    )
-    if is_receipt:
-        amount, raw_name, raw_account_num = parse_khqr_receipt(raw_text)
+    # 🟢 UPDATED: Universal Direct Vision Extraction for Telegram Uploads
+    if image_bytes:
+        amount, raw_name = process_receipt_image_direct(image_bytes)
+        logger.info(f"📸 [Vision Extracted]: Merchant='{raw_name}', Amount={amount}")
+
+    # Fallback for plain text input (when no image is attached)
+    if not image_bytes and raw_text:
+        is_receipt = any(
+            k in raw_text.lower() for k in ["transfer to", "paid to", "from account", "trx id", "bakong", "transfer"]
+        )
+        if is_receipt:
+            amount, raw_name, raw_account_num = parse_khqr_receipt(raw_text)
 
     if not amount:
         try:
@@ -386,6 +436,7 @@ def parse_natural_language_transaction(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini parsing error: {str(e)}")
 
+
 @router.post("/scan-receipt", response_model=ParsedTransactionResult)
 async def scan_receipt_image(
         session: SessionDep,
@@ -428,6 +479,7 @@ async def scan_receipt_image(
         return ParsedTransactionResult.model_validate_json(resp_text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini Vision error: {str(e)}")
+
 
 @router.post("/chat", response_model=ChatResponse)
 def handle_ui_chat_assistant(
