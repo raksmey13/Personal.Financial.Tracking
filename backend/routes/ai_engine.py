@@ -60,6 +60,7 @@ class ParsedTransactionResult(BaseModel):
 class GeminiParsedTransaction(BaseModel):
     merchant: str
     amount: float
+    currency: str = "USD"
     category: str = "Uncategorized"
 
 
@@ -195,26 +196,26 @@ def parse_khqr_receipt(text: str):
     return amount, raw_name, raw_account_num
 
 
-# 🟢 NEW: Direct Vision Processing Function
-def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal], str]:
+# 🟢 Direct Vision Function with Exact Currency Detection (No Conversion)
+def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal], str, str]:
     """
-    Passes image bytes directly to Gemini Vision to extract amount and merchant name visually.
+    Passes image bytes directly to Gemini Vision to extract exact amount, merchant name, and currency (USD or KHR).
     """
     prompt = """
     Analyze this payment receipt or bank transfer screenshot visually.
 
     CRITICAL EXTRACTION RULES:
     1. "merchant": Identify the recipient, seller, store, or vendor.
-       - Look directly below the top logo icon / amount header first (e.g., store name, website, seller title).
-       - Also check fields like "Seller:", "Paid To:", "To:", "Beneficiary:", or "Terminal name:".
-       - NEVER use the "From account" or "Cardholder" name (that is the sender).
-    2. "amount": Extract the transaction amount as a numeric float.
-       - Look at the top main header amount (e.g., -2.00 USD -> 2.00).
+       - Check top header title, "Transfer to", "Paid To:", "Seller:", or "Terminal name:".
+       - NEVER use the "From account" name (that is the sender).
+    2. "amount": Extract the exact transaction amount as a numeric float.
+    3. "currency": Detect whether the currency is "USD" ($) or "KHR" (៛). Output "USD" or "KHR".
 
     Output JSON ONLY:
     {
       "merchant": "STRING",
-      "amount": NUMBER
+      "amount": NUMBER,
+      "currency": "STRING"
     }
     """
 
@@ -222,9 +223,10 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
         "type": "OBJECT",
         "properties": {
             "merchant": {"type": "STRING"},
-            "amount": {"type": "NUMBER"}
+            "amount": {"type": "NUMBER"},
+            "currency": {"type": "STRING"}
         },
-        "required": ["merchant", "amount"]
+        "required": ["merchant", "amount", "currency"]
     }
 
     try:
@@ -233,11 +235,16 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
 
         amt = Decimal(str(round(parsed.amount, 2))) if parsed.amount else None
         merchant_name = parsed.merchant.strip().upper() if parsed.merchant else "UNKNOWN MERCHANT"
+        currency = getattr(parsed, 'currency', 'USD').upper()
+        if "KHR" in currency or "៛" in currency:
+            currency = "KHR"
+        else:
+            currency = "USD"
 
-        return amt, merchant_name
+        return amt, merchant_name, currency
     except Exception as e:
         logger.error(f"Direct vision extraction error: {e}")
-        return None, "UNKNOWN MERCHANT"
+        return None, "UNKNOWN MERCHANT", "USD"
 
 
 # --- Unified Processor Function ---
@@ -250,11 +257,12 @@ def process_transaction_input(
     amount = None
     raw_name = "UNKNOWN MERCHANT"
     raw_account_num = None
+    extracted_currency = "USD"
 
-    # 🟢 UPDATED: Universal Direct Vision Extraction for Telegram Uploads
+    # 🟢 Universal Direct Vision Extraction for Telegram Uploads
     if image_bytes:
-        amount, raw_name = process_receipt_image_direct(image_bytes)
-        logger.info(f"📸 [Vision Extracted]: Merchant='{raw_name}', Amount={amount}")
+        amount, raw_name, extracted_currency = process_receipt_image_direct(image_bytes)
+        logger.info(f"📸 [Vision Extracted]: Merchant='{raw_name}', Amount={amount} {extracted_currency}")
 
     # Fallback for plain text input (when no image is attached)
     if not image_bytes and raw_text:
@@ -287,6 +295,7 @@ def process_transaction_input(
                 "properties": {
                     "merchant": {"type": "STRING"},
                     "amount": {"type": "NUMBER"},
+                    "currency": {"type": "STRING"},
                     "category": {"type": "STRING"}
                 },
                 "required": ["merchant", "amount"]
@@ -301,11 +310,16 @@ def process_transaction_input(
 
             amount = Decimal(str(parsed_amt))
             raw_name = parsed.merchant.upper()
+            if hasattr(parsed, "currency") and parsed.currency:
+                extracted_currency = "KHR" if "KHR" in parsed.currency.upper() or "៛" in parsed.currency else "USD"
         except Exception as e:
             logger.error(f"Gemini transaction processing error: {e}")
 
     if not amount or amount <= 0:
         return "⚠️ Could not parse transaction amount. Please specify like: 'Spent $5.50 on Coffee'."
+
+    # Set currency formatting symbol for responses
+    symbol = "៛" if extracted_currency == "KHR" else "$"
 
     with Session(engine) as session:
         user_accounts = session.exec(
@@ -315,7 +329,10 @@ def process_transaction_input(
         if not user_accounts:
             return "⚠️ No active financial accounts found."
 
-        matched_account_id = user_accounts[0].id
+        # 🟢 Match user's account by extracted currency (e.g., match KHR account for KHR receipts)
+        matched_account = next((a for a in user_accounts if a.currency.upper() == extracted_currency), user_accounts[0])
+        matched_account_id = matched_account.id
+
         if raw_account_num:
             db_acc = session.exec(
                 select(Account).where(Account.user_id == user_id, Account.account_name.contains(raw_account_num))
@@ -358,7 +375,7 @@ def process_transaction_input(
                 tx_date=date.today()
             )
 
-            return f"✅ Auto-categorized ${clean_amount:.2f} under Category #{mapping.category_id} ({raw_name})."
+            return f"✅ Auto-categorized {symbol}{clean_amount:.2f} under Category #{mapping.category_id} ({raw_name})."
 
         else:
             pending = PendingTransaction(
@@ -377,7 +394,7 @@ def process_transaction_input(
             session.add(Notification(
                 user_id=user_id,
                 title="📥 Action Required: Uncategorized Transaction",
-                message=f"New transaction of ${amount:.2f} from '{raw_name}' needs a category in your Pending Inbox.",
+                message=f"New transaction of {symbol}{amount:.2f} from '{raw_name}' needs a category in your Pending Inbox.",
                 notification_type="warning",
                 is_read=False,
                 created_at=datetime.utcnow(),
@@ -388,7 +405,7 @@ def process_transaction_input(
             ))
             session.commit()
 
-            return f"📥 Staged ${amount:.2f} for '{raw_name}' in Pending Inbox!"
+            return f"📥 Staged {symbol}{amount:.2f} for '{raw_name}' in Pending Inbox!"
 
 
 # --- REST API Endpoints ---
