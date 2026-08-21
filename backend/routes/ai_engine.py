@@ -140,9 +140,11 @@ def extract_text_from_image_bytes(image_bytes: bytes) -> str:
         logger.error(f"Error executing Gemini Vision extraction: {e}")
         return ""
 
+
 def parse_khqr_receipt(text: str):
     amount = None
 
+    # Extract transaction amount
     amount_match = re.search(
         r'(?:amount|total|paid|sum|trx\s*amount)?\s*:?\s*[\-—\+]?\s*\$?\s*(\d+(?:[\.\,]\d{1,2})?)\s*(?:USD|\$|KHR|៛)?',
         text, re.IGNORECASE
@@ -161,20 +163,25 @@ def parse_khqr_receipt(text: str):
             pass
 
     raw_name = "UNKNOWN MERCHANT"
+
+    # 🟢 FIX 1: Support Unicode (Khmer, Chinese, Latin) and common transfer labels (To, Paid To, Receiver, Beneficiary)
     name_match = re.search(
-        r'(?:transfer\s+to|paid\s+to|to\s+account|beneficiary|receiver|merchant|to)\s*:?\s*([A-Za-z0-9\s\.\&\-]+)',
+        r'(?:transfer\s+to|paid\s+to|to\s+account|beneficiary|receiver|merchant\s+name|merchant|to)\s*:?\s*([^\n\r]+)',
         text, re.IGNORECASE
     )
 
     if name_match:
-        extracted = name_match.group(1).split('\n')[0].strip().upper()
+        extracted = name_match.group(1).strip()
+
+        # 🟢 FIX 2: Safely remove trailing metadata keywords without wiping out the beneficiary name
         cleaned = re.sub(
-            r'\b(TRX\.?\s*ID|ORIGINAL\s+AMOUNT|FROM\s+ACCOUNT|TO\s+ACCOUNT|REFERENCE\s*#|TRANSACTION\s+DATE|REMARK)\b.*',
+            r'\b(TRX\.?\s*ID|ORIGINAL\s+AMOUNT|REFERENCE\s*#|TRANSACTION\s+DATE|REMARK|DATE)\b.*',
             '', extracted, flags=re.IGNORECASE
         ).strip()
+
         cleaned = re.sub(r'^(TO|TRANSFER TO|PAID TO)\s+', '', cleaned, flags=re.IGNORECASE).strip()
         if cleaned:
-            raw_name = cleaned
+            raw_name = cleaned.upper()
 
     raw_account_num = None
     acc_match = re.search(r'From\s+account\s*:?\s*.*?\b([\d\s]{8,15})\b', text, re.IGNORECASE)
