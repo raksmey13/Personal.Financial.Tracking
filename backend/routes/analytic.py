@@ -23,12 +23,17 @@ def get_custom_analytics_report(
     currency_target: str = Query("all", alias="currency_target", description="all | USD | KHR"),
     include_debts: bool = Query(False),
     depth: str = Query("main", description="main | sub"),
-    forecast_unit: str = Query("month", alias="forecast_unit")
+    forecast_unit: str = Query("month", alias="forecast_unit"),
+    steps: Optional[int] = Query(None, description="Number of future periods to predict") # 🟢 Added dynamic steps
 ):
     try:
         user_id = current_user.id
         account_id = int(account_target) if (account_target and account_target != "all" and account_target.isdigit()) else None
         target_currency = currency_target.strip().upper() if currency_target and currency_target != "all" else None
+
+        # 🟢 Dynamic step count default: 7 for Days (1 full week), 6 for Months
+        if steps is None:
+            steps = 7 if forecast_unit.lower().startswith("day") else 6
 
         # =========================================================
         # 1. RAW TRANSACTIONS LIST PAYLOAD (PRESERVING NATIVE CURRENCY)
@@ -207,7 +212,7 @@ def get_custom_analytics_report(
                     else:
                         daily_deltas_usd[d_str] += raw_val
 
-        # Get Starting Balances
+        # Get Current Balances
         acc_stmt = select(Account).where(Account.user_id == user_id, Account.is_active == True)
         if not include_debts:
             acc_stmt = acc_stmt.where(Account.account_type != "Credit Card", Account.account_type != "Loan")
@@ -267,15 +272,20 @@ def get_custom_analytics_report(
             days_w = max((to_date - from_date).days, 1)
             months_w = max(days_w / 30.0, 1.0)
 
-            avg_inc = total_inc / months_w
-            avg_exp = total_exp / months_w
-
-            rate = (avg_inc - avg_exp) if forecast_unit.lower() == "month" else (avg_inc - avg_exp) / 30.0
-            prefix = "Month" if forecast_unit.lower() == "month" else "Day"
+            # 🟢 Accurate rate calculation per unit type
+            if forecast_unit.lower().startswith("day"):
+                rate = (total_inc - total_exp) / float(days_w)
+                prefix = "Day"
+            else:
+                avg_inc = total_inc / months_w
+                avg_exp = total_exp / months_w
+                rate = avg_inc - avg_exp
+                prefix = "Month"
 
             projections = []
             r_bal = starting_balance
-            for s in range(1, 7):
+            # 🟢 Dynamic projection loop matching user's selected step count (e.g., 7 days or 6 months)
+            for s in range(1, steps + 1):
                 r_bal += rate
                 projections.append({
                     "period": f"{prefix} +{s}",
