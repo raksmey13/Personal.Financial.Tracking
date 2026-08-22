@@ -1,14 +1,74 @@
 {
   "nav": {
     "dashboard": "Dashboard",
-    "calendar": "Calendar",
+    "transaction": "Transactions",
+    "category": "Category",
+    "accounts": "Accounts",
+    "budget": "Budget",
     "analytics": "Analytics",
-    "settings": "Settings"
+    "import_export": "Import/Export",
+    "export_pdf": "Export PDF",
+    "export_csv": "Export CSV",
+    "import_csv": "Import CSV/XLSX",
+    "calendar": "Calendar",
+    "settings": "Settings",
+    "notifications": "Notifications",
+    "profile": "Profile",
+    "sign_out": "Sign Out Session"
   },
   "summary": {
+    "title": "Summary",
+    "liquid_assets": "Liquid Assets",
+    "total_debt": "Total Debt",
+    "total_cash_flow": "Total Cash Flow",
+    "net_worth": "Net Worth",
     "total_income": "Total Income",
     "total_expense": "Total Expense",
-    "net_balance": "Net Balance"
+    "net_balance": "Net Balance",
+    "this_month": "This Month",
+    "last_month": "Last Month",
+    "net_worth_trajectory": "Net Worth Trajectory (6 Months)"
+  },
+  "dashboard": {
+    "accounts": "Accounts",
+    "credit_card_utilization": "Credit Card Utilization",
+    "active_budgets": "Active Budgets",
+    "weekly_spending": "Weekly Spending (Last 7 Days)",
+    "spent": "Spent",
+    "cap": "Cap"
+  },
+  "transactions": {
+    "all_transactions": "All Transaction",
+    "pending_inbox": "Pending Inbox",
+    "income": "Income",
+    "expense": "Expense",
+    "transfer": "Transfer",
+    "id": "ID",
+    "icon": "Icon",
+    "category": "Category",
+    "raw_beneficiary": "Raw Beneficiary",
+    "amount": "Amount",
+    "account": "Account",
+    "date": "Date",
+    "desc": "Desc",
+    "assign_category": "Assign Category",
+    "type": "Type",
+    "actions": "Actions",
+    "starting_balance": "Starting Balance",
+    "search_placeholder": "Search descriptions, tags, or beneficiaries...",
+    "all_types": "All Entry Types",
+    "all_accounts": "All Combined Accounts",
+    "all_currencies": "Currency (All)",
+    "all_categories": "All Categories / Tags",
+    "all_statuses": "All Item Statuses",
+    "logged_items": "Logged Transactions",
+    "pending_items": "Pending Inbox Items",
+    "to": "to",
+    "min": "Min",
+    "max": "Max",
+    "showing": "Showing",
+    "of": "of",
+    "page": "Page"
   },
   "settings": {
     "title": "User Settings",
@@ -16,6 +76,7 @@
     "first_day_of_month": "First Day of Month",
     "first_day_of_week": "First Day of Week",
     "transition_set_transaction": "Transition Set of Transaction",
-    "display_bank_check": "Display Bank Check Icon"
+    "display_bank_check": "Display Bank Check Icon",
+    "dark_mode": "Dark Mode"
   }
 }

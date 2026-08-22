@@ -7,11 +7,25 @@ import {
   BarElement, ArcElement, Title, Tooltip, Legend, Filler
 } from 'chart.js';
 import { FaPlus, FaMinus, FaWallet } from 'react-icons/fa';
+import { useTranslation } from "react-i18next";
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, LineElement, BarElement,
   ArcElement, Title, Tooltip, Legend, Filler
 );
+
+export default function Overview() {
+  const { t } = useTranslation();
+
+  return (
+    <div>
+      <h2>{t("summary.title")}</h2>
+      <p>{t("summary.liquid_assets")}</p>
+      <p>{t("summary.total_debt")}</p>
+      <p>{t("summary.net_worth")}</p>
+    </div>
+  );
+}
 
 const formatAxisNumber = (value) => {
   if (value >= 1000000 || value <= -1000000) return (value / 1000000).toFixed(1) + 'M';
