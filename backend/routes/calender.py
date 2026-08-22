@@ -5,7 +5,7 @@ import calendar
 from typing import List, Dict, Any
 from database import SessionDep
 from models import Budget, Account, Transaction, Category, User
-from .auth import get_current_user  # 🟢 RELATIVE IMPORT MATCHING YOUR FOLDER STRUCTURE
+from .auth import get_current_user
 
 router = APIRouter(prefix="/calendar", tags=["Calendar Engine"])
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/calendar", tags=["Calendar Engine"])
 @router.get("/events")
 def get_calendar_events(
         session: SessionDep,
-        current_user: User = Depends(get_current_user),  # 🟢 DYNAMIC USER CONTEXT
+        current_user: User = Depends(get_current_user),
         year: int = Query(..., description="e.g. 2026"),
         month: int = Query(..., description="1-12")
 ):
@@ -34,13 +34,12 @@ def get_calendar_events(
         db_budgets = session.exec(budgets_stmt).all()
 
         for b in db_budgets:
-            budget_date = getattr(b, "end_date", None) or getattr(b, "start_date", None) or getattr(b, "created_at", None)
+            budget_date = getattr(b, "end_date", None) or getattr(b, "start_date", None) or getattr(b, "created_at",
+                                                                                                    None)
 
-            # Standardize datetime objects to date
             if isinstance(budget_date, datetime):
                 budget_date = budget_date.date()
 
-            # If valid date exists, check if it falls in the target month
             if isinstance(budget_date, date):
                 if not (start_date <= budget_date <= end_date):
                     continue
@@ -56,6 +55,7 @@ def get_calendar_events(
                 "id": f"budget-{b.id}",
                 "title": getattr(b, "name", None) or "Budget Target",
                 "amount": float(getattr(b, "monthly_limit", 0) or 0),
+                "currency": "USD",
                 "strategy_type": strat_type,
                 "type": "fixed_bill" if strat_type == "fixed_allocation" else "spending_cap",
                 "color": "amber" if strat_type == "fixed_allocation" else "red"
@@ -68,12 +68,12 @@ def get_calendar_events(
             Account.payment_due_day != None
         )
         db_accounts = session.exec(accounts_stmt).all()
+        accounts_map = {acc.id: acc for acc in db_accounts}
 
         for acc in db_accounts:
             if not acc.payment_due_day:
                 continue
 
-            # Clamp payment_due_day to valid month range
             actual_due_day = min(int(acc.payment_due_day), last_day)
 
             try:
@@ -87,6 +87,7 @@ def get_calendar_events(
                     "id": f"account-{acc.id}",
                     "title": f"Pay {acc.account_name} Statement",
                     "amount": float(acc.balance or 0),
+                    "currency": str(acc.currency or "USD").strip().upper(),
                     "strategy_type": "credit_card_payment",
                     "type": "statement_due",
                     "color": "blue"
@@ -105,6 +106,10 @@ def get_calendar_events(
 
         categories_map = {c.id: c.name for c in session.exec(select(Category).where(Category.user_id == user_id)).all()}
 
+        # Load all accounts to map currency cleanly
+        all_accounts = session.exec(select(Account).where(Account.user_id == user_id)).all()
+        all_accounts_map = {a.id: a for a in all_accounts}
+
         for tx in db_transactions:
             if not tx.transaction_date:
                 continue
@@ -122,12 +127,23 @@ def get_calendar_events(
             cat_name = categories_map.get(tx.category_id, "Transaction")
             tx_amount = float(tx.amount or 0)
 
+            # Fetch Account currency
+            acc = all_accounts_map.get(tx.account_id)
+            acc_currency = str(acc.currency if acc else "USD").strip().upper()
+
+            # 🟢 Clean title string without hardcoded $ symbol
+            if acc_currency == "KHR":
+                formatted_str = f"{cat_name}: {'-' if is_expense else '+'}{tx_amount:,.0f}៛"
+            else:
+                formatted_str = f"{cat_name}: {'-' if is_expense else '+'}${tx_amount:,.2f}"
+
             events_payload[date_str].append({
                 "id": f"tx-{tx.id}",
-                "title": f"{cat_name}: {'-' if is_expense else '+'}${tx_amount:.2f}",
+                "title": formatted_str,
                 "amount": tx_amount,
+                "currency": acc_currency,  # 🟢 Added currency field to payload
+                "type": tx_type,
                 "strategy_type": "historical_ledger",
-                "type": "transaction",
                 "color": "purple"
             })
 
