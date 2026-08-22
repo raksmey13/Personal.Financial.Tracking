@@ -165,7 +165,8 @@ const Sidebar = ({ onLogout, currentUser, isDarkMode, setIsDarkMode }) => {
         </nav>
       </div>
 
-        <div className="p-4 border-t border-gray-100 dark:border-slate-800 space-y-3 bg-white dark:bg-[#0f172a]">        <div className="flex items-center justify-between px-2">
+      <div className="p-4 border-t border-gray-100 dark:border-slate-800 space-y-3 bg-white dark:bg-[#0f172a]">
+        <div className="flex items-center justify-between px-2">
           {!isCollapsed && (
             <span className="text-xs font-bold text-gray-400 dark:text-slate-400 flex items-center gap-1.5">
               {isDarkMode ? <FaMoon className="text-blue-400" /> : <FaSun className="text-amber-500" />}
@@ -216,8 +217,11 @@ const Navbar = ({ notifications, setNotifications, token, currentUser }) => {
     return "PFTrack Portal";
   };
 
+  const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent((currentUser?.first_name || currentUser?.firstName || "PF") + ' ' + (currentUser?.last_name || currentUser?.lastName || ""))}&background=3B82F6&color=fff`;
+
   return (
-    <header className="bg-white dark:bg-[#0f172a] border-b border-gray-100 dark:border-slate-800 h-20 px-8 flex justify-between items-center sticky top-0 z-40 flex-shrink-0 transition-colors duration-300">      <div className="flex items-center gap-2">
+    <header className="bg-white dark:bg-[#0f172a] border-b border-gray-100 dark:border-slate-800 h-20 px-8 flex justify-between items-center sticky top-0 z-40 flex-shrink-0 transition-colors duration-300">
+      <div className="flex items-center gap-2">
         <span className="text-[10px] uppercase font-black tracking-widest text-gray-300 dark:text-slate-500">PFTrack</span>
         <span className="text-gray-300 dark:text-slate-600 text-xs font-normal">/</span>
         <h1 className="text-base font-black text-gray-800 dark:text-slate-100 tracking-tight capitalize">
@@ -234,7 +238,8 @@ const Navbar = ({ notifications, setNotifications, token, currentUser }) => {
 
         <Link to="/profile" className="flex items-center gap-2">
           <img
-            src={currentUser?.avatar_url || "https://ui-avatars.com/api/?name=User+Profile&background=random"}
+            src={currentUser?.avatar_url || currentUser?.avatarUrl || fallbackAvatar}
+            onError={(e) => { e.currentTarget.src = fallbackAvatar; }}
             alt="User Profile"
             className="w-9 h-9 rounded-full border border-gray-200 dark:border-slate-700 hover:brightness-90 transition-all cursor-pointer shadow-xs object-cover"
           />
@@ -260,24 +265,21 @@ export default function App() {
   const [authView, setAuthView] = useState("login");
   const [notifications, setNotifications] = useState([]);
 
-  // 🟢 Global Dark Mode State (Persisted in localStorage)
   const [isDarkMode, setIsDarkMode] = useState(() => {
-  const savedTheme = localStorage.getItem("theme");
-  return savedTheme === "dark"; // Returns false by default if localStorage is empty
-});
+    const savedTheme = localStorage.getItem("theme");
+    return savedTheme === "dark";
+  });
 
-// 🟢 Apply or remove dark class directly on root <html>
-useEffect(() => {
-  if (isDarkMode) {
-    document.documentElement.classList.add("dark");
-    localStorage.setItem("theme", "dark");
-  } else {
-    document.documentElement.classList.remove("dark");
-    localStorage.setItem("theme", "light");
-  }
-}, [isDarkMode]);
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  }, [isDarkMode]);
 
-  // Fetch Current User Details & Settings
   const fetchUserProfile = async (authToken) => {
     if (!authToken) return;
     try {
@@ -384,7 +386,7 @@ useEffect(() => {
           <Signup onSwitchToLogin={() => setAuthView("login")} onSignupSuccess={() => setAuthView("login")} />
         )
       ) : (
-        <div className="flex min-h-screen bg-[#F8F9FD] dark:bg-slate-950 font-sans antialiased selection:bg-blue-500/10 transition-colors duration-200">
+        <div className="flex min-h-screen bg-[#F8F9FD] dark:bg-[#0B0F17] font-sans antialiased selection:bg-blue-500/10 transition-colors duration-200">
           <Sidebar
             onLogout={handleLogout}
             currentUser={currentUser}
@@ -405,7 +407,7 @@ useEffect(() => {
                   path="/"
                   element={
                     !currentUser ? (
-                      <div className="h-screen w-full flex items-center justify-center bg-[#F8F9FD] dark:bg-slate-950">
+                      <div className="h-screen w-full flex items-center justify-center bg-[#F8F9FD] dark:bg-[#0B0F17]">
                         <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                       </div>
                     ) : currentUser.is_admin ? (
@@ -449,7 +451,7 @@ useEffect(() => {
                 <Route path="/accounts" element={<AccountPage />} />
                 <Route path="/budget" element={<BudgetPage />} />
                 <Route path="/analytic" element={<AnalyticsReport />} />
-                <Route path="/profile" element={<Profile />} />
+                <Route path="/profile" element={<Profile dbSnapshot={currentUser || {}} />} />
                 <Route path="/export-pdf" element={<ExportImport mode="pdf" />} />
                 <Route path="/export-csv" element={<ExportImport mode="csv" />} />
                 <Route path="/import" element={<ExportImport mode="import" />} />
