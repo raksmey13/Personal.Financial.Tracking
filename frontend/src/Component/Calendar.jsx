@@ -3,7 +3,6 @@ import { FaChevronLeft, FaChevronRight, FaRegCalendarAlt, FaClock } from 'react-
 import { analyticsAPI } from "../API/index";
 
 const CalendarPage = () => {
-  // 🟢 FIXED: Open dynamically to today's date instead of hardcoded June
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState({});
   const [selectedDay, setSelectedDay] = useState(null);
@@ -75,26 +74,37 @@ const CalendarPage = () => {
     return "EXPENSE";
   };
 
-  // 🟢 HELPER: Formats currency values properly with $ vs ៛ symbols
+  // 🟢 CLEAN CURRENCY FORMATTER: Prevents double negative signs and formats USD vs KHR
   const formatCurrency = (amount, currency = 'USD') => {
     const isKhr = String(currency).toUpperCase() === 'KHR';
-    const val = Math.abs(amount);
+    const absVal = Math.abs(Number(amount) || 0);
+
     if (isKhr) {
-      return `${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}៛`;
+      return `${absVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}៛`;
     }
-    return `$${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `$${absVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // 🟢 HELPER: Calculates Net Daily Cashflow Pip Balance
-  const getDailyNetBalance = (dayEvents) => {
+  // 🟢 SEPARATED DUAL-CURRENCY NET FLOW CALCULATOR
+  const getDailyNetBalances = (dayEvents) => {
     let netUsd = 0;
+    let netKhr = 0;
+
     dayEvents.forEach(ev => {
       const type = getEventCategoryType(ev);
       const amt = Number(ev.amount || 0);
-      if (type === 'INCOME') netUsd += amt;
-      else if (type === 'EXPENSE') netUsd -= amt;
+      const isKhr = String(ev.currency).toUpperCase() === 'KHR';
+
+      if (type === 'INCOME') {
+        if (isKhr) netKhr += amt;
+        else netUsd += amt;
+      } else if (type === 'EXPENSE') {
+        if (isKhr) netKhr -= amt;
+        else netUsd -= amt;
+      }
     });
-    return netUsd;
+
+    return { netUsd, netKhr };
   };
 
   return (
@@ -132,7 +142,7 @@ const CalendarPage = () => {
             const dayKey = formatDayKey(day);
             const dayEvents = events[dayKey] || [];
             const isSelected = selectedDay === day;
-            const netBalance = getDailyNetBalance(dayEvents);
+            const { netUsd, netKhr } = getDailyNetBalances(dayEvents);
 
             return (
               <div
@@ -144,18 +154,31 @@ const CalendarPage = () => {
                     : 'bg-white border-gray-100 text-gray-800 hover:bg-gray-50'
                 }`}
               >
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-start">
                   <span className={`text-xs font-black ${isSelected ? 'text-white' : 'text-gray-400'}`}>{day}</span>
 
-                  {/* 🟢 Daily Net Flow Pip */}
-                  {dayEvents.length > 0 && netBalance !== 0 && (
-                    <span className={`text-[7px] font-black px-1 rounded ${
-                      isSelected
-                        ? 'bg-white/20 text-white'
-                        : netBalance > 0 ? 'text-emerald-600' : 'text-red-500'
-                    }`}>
-                      {netBalance > 0 ? `+${formatCurrency(netBalance)}` : formatCurrency(netBalance)}
-                    </span>
+                  {/* 🟢 SEPARATED DUAL CURRENCY NET FLOW PIPS */}
+                  {dayEvents.length > 0 && (
+                    <div className="flex flex-col items-end gap-0.5">
+                      {netUsd !== 0 && (
+                        <span className={`text-[7px] font-black px-1 rounded ${
+                          isSelected
+                            ? 'bg-white/20 text-white'
+                            : netUsd > 0 ? 'text-emerald-600' : 'text-red-500'
+                        }`}>
+                          {netUsd > 0 ? `+${formatCurrency(netUsd, 'USD')}` : `-${formatCurrency(netUsd, 'USD')}`}
+                        </span>
+                      )}
+                      {netKhr !== 0 && (
+                        <span className={`text-[7px] font-black px-1 rounded ${
+                          isSelected
+                            ? 'bg-white/20 text-white'
+                            : netKhr > 0 ? 'text-emerald-600' : 'text-red-500'
+                        }`}>
+                          {netKhr > 0 ? `+${formatCurrency(netKhr, 'KHR')}` : `-${formatCurrency(netKhr, 'KHR')}`}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -214,6 +237,7 @@ const CalendarPage = () => {
           ) : (
             activeDayEvents.map(ev => {
               const financialType = getEventCategoryType(ev);
+              const isExpense = financialType === 'EXPENSE';
 
               return (
                 <div
@@ -228,14 +252,17 @@ const CalendarPage = () => {
                     {financialType === "INCOME" ? "💰" : financialType === "TRANSFER" ? "🔄" : "💸"}
                   </div>
                   <div className="flex-1 space-y-1">
-                    <h4 className="text-xs font-black uppercase tracking-wide leading-tight">{ev.title}</h4>
+                    {/* 🟢 Title stripped of double negative strings */}
+                    <h4 className="text-xs font-black uppercase tracking-wide leading-tight">
+                      {ev.title.replace(/^[^:]+:\s*[-+]+/, ev.title.split(':')[0] + ': ')}
+                    </h4>
                     <p className="text-[10px] font-black uppercase tracking-wider opacity-60 flex items-center gap-1.5">
                       <FaClock size={9} /> {ev.type.replace("_", " ")}
                     </p>
 
-                    {/* 🟢 FIXED: Renders USD ($) or KHR (៛) cleanly based on ev.currency */}
+                    {/* 🟢 Clean single-sign currency output */}
                     <div className="text-sm font-black font-mono pt-1">
-                      {financialType === 'INCOME' ? '+' : '-'}{formatCurrency(ev.amount, ev.currency)}
+                      {isExpense ? '-' : '+'}{formatCurrency(ev.amount, ev.currency)}
                     </div>
                   </div>
                 </div>
