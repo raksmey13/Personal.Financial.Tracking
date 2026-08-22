@@ -130,11 +130,8 @@ def create_account(
         if target_account.is_savings_target:
             reset_other_savings_targets(session, current_user.id, current_account_id=target_account.id)
 
-        # 🟢 FIXED: Properly classify opening balance as income if positive or expense if debt liability
+        # 🟢 UPDATED: Classify opening baseline as neutral 'transfer' instead of income/expense
         if starting_amount != Decimal("0.00"):
-            clean_acc_type = target_account.account_type.lower()
-            is_debt = "loan" in clean_acc_type or "credit" in clean_acc_type or starting_amount < 0
-
             default_category = session.exec(
                 select(Category).where(
                     Category.user_id == current_user.id,
@@ -150,7 +147,7 @@ def create_account(
             if not default_category:
                 default_category = Category(
                     name="Opening Balance",
-                    type="income" if not is_debt else "expense",
+                    type="transfer",
                     icon="wallet",
                     user_id=current_user.id
                 )
@@ -161,7 +158,7 @@ def create_account(
                 account_id=target_account.id,
                 user_id=current_user.id,
                 amount=abs(starting_amount),
-                type="expense" if is_debt else "income",  # 🟢 Allows analytics to count KHR opening balances as income!
+                type="transfer",  # 🟢 Neutralized transaction type to prevent graph distortion
                 description="Opening Balance Baseline",
                 transaction_date=datetime.now().date(),
                 category_id=default_category.id

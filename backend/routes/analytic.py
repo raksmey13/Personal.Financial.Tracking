@@ -13,25 +13,25 @@ router = APIRouter(prefix="/analytics", tags=["Advanced Analytics Engine"])
 
 @router.get("/report")
 def get_custom_analytics_report(
-    session: SessionDep,
-    current_user: User = Depends(get_current_user),
-    tab: str = Query(..., description="category | time | future"),
-    view_type: str = Query("expenses", alias="view_type", description="expenses | income | both"),
-    from_date: date = Query(...),
-    to_date: date = Query(...),
-    account_target: str = Query("all", alias="account_target"),
-    currency_target: str = Query("all", alias="currency_target", description="all | USD | KHR"),
-    include_debts: bool = Query(False),
-    depth: str = Query("main", description="main | sub"),
-    forecast_unit: str = Query("month", alias="forecast_unit"),
-    steps: Optional[int] = Query(None, description="Number of future periods to predict") # 🟢 Added dynamic steps
+        session: SessionDep,
+        current_user: User = Depends(get_current_user),
+        tab: str = Query(..., description="category | time | future"),
+        view_type: str = Query("expenses", alias="view_type", description="expenses | income | both"),
+        from_date: date = Query(...),
+        to_date: date = Query(...),
+        account_target: str = Query("all", alias="account_target"),
+        currency_target: str = Query("all", alias="currency_target", description="all | USD | KHR"),
+        include_debts: bool = Query(False),
+        depth: str = Query("main", description="main | sub"),
+        forecast_unit: str = Query("month", alias="forecast_unit"),
+        steps: Optional[int] = Query(None, description="Number of future periods to predict")
 ):
     try:
         user_id = current_user.id
-        account_id = int(account_target) if (account_target and account_target != "all" and account_target.isdigit()) else None
+        account_id = int(account_target) if (
+                    account_target and account_target != "all" and account_target.isdigit()) else None
         target_currency = currency_target.strip().upper() if currency_target and currency_target != "all" else None
 
-        # 🟢 Dynamic step count default: 7 for Days (1 full week), 6 for Months
         if steps is None:
             steps = 7 if forecast_unit.lower().startswith("day") else 6
 
@@ -51,7 +51,7 @@ def get_custom_analytics_report(
             Category.icon.label("cat_icon"),
             Category.parent_id.label("cat_parent_id")
         ).join(Account, Transaction.account_id == Account.id) \
-         .join(Category, Transaction.category_id == Category.id)
+            .join(Category, Transaction.category_id == Category.id)
 
         tx_statement = tx_statement.where(
             Account.user_id == user_id,
@@ -166,53 +166,7 @@ def get_custom_analytics_report(
         time_series_usd, time_series_khr = [], []
         cash_flow_usd, cash_flow_khr = [], []
 
-        time_stmt = select(Transaction.transaction_date, Transaction.type, Transaction.amount, Account.currency) \
-            .join(Account, Transaction.account_id == Account.id) \
-            .where(
-                Account.user_id == user_id,
-                Transaction.transaction_date >= from_date,
-                Transaction.transaction_date <= to_date
-            )
-
-        if account_id:
-            time_stmt = time_stmt.where(Transaction.account_id == account_id)
-
-        if target_currency:
-            time_stmt = time_stmt.where(func.trim(func.upper(Account.currency)) == target_currency)
-
-        if not include_debts:
-            time_stmt = time_stmt.where(Account.account_type != "Credit Card")
-            time_stmt = time_stmt.where(Account.account_type != "Loan")
-
-        time_results = session.exec(time_stmt).all()
-
-        daily_deltas_usd = {}
-        daily_deltas_khr = {}
-        curr_day = from_date
-        while curr_day <= to_date:
-            d_key = curr_day.strftime("%Y-%m-%d")
-            daily_deltas_usd[d_key] = Decimal(0)
-            daily_deltas_khr[d_key] = Decimal(0)
-            curr_day += timedelta(days=1)
-
-        for tx_date, tx_type, tx_amount, acc_currency in time_results:
-            d_str = tx_date.strftime("%Y-%m-%d")
-            raw_val = Decimal(str(abs(float(tx_amount or 0.0))))
-            curr = str(acc_currency or "USD").strip().upper()
-
-            if d_str in daily_deltas_usd:
-                if curr == "KHR":
-                    if tx_type.lower().startswith("expense"):
-                        daily_deltas_khr[d_str] -= raw_val
-                    else:
-                        daily_deltas_khr[d_str] += raw_val
-                else:
-                    if tx_type.lower().startswith("expense"):
-                        daily_deltas_usd[d_str] -= raw_val
-                    else:
-                        daily_deltas_usd[d_str] += raw_val
-
-        # Get Current Balances
+        # Step A: Get Current Live Balances
         acc_stmt = select(Account).where(Account.user_id == user_id, Account.is_active == True)
         if not include_debts:
             acc_stmt = acc_stmt.where(Account.account_type != "Credit Card", Account.account_type != "Loan")
@@ -223,25 +177,102 @@ def get_custom_analytics_report(
         bal_usd = sum(float(a.balance or 0.0) for a in user_accounts if str(a.currency).strip().upper() == "USD")
         bal_khr = sum(float(a.balance or 0.0) for a in user_accounts if str(a.currency).strip().upper() == "KHR")
 
-        running_usd, running_khr = bal_usd, bal_khr
-        for day_str in sorted(daily_deltas_usd.keys()):
-            net_usd = float(daily_deltas_usd[day_str])
-            net_khr = float(daily_deltas_khr[day_str])
+        # Step B: Reverse engineer the true starting balance just before 'from_date'
+        future_tx_stmt = select(Transaction.type, Transaction.amount, Account.currency) \
+            .join(Account, Transaction.account_id == Account.id) \
+            .where(
+            Account.user_id == user_id,
+            Transaction.transaction_date >= from_date
+        )
 
-            time_series_usd.append({"date": day_str, "amount": net_usd})
-            time_series_khr.append({"date": day_str, "amount": net_khr})
+        if account_id:
+            future_tx_stmt = future_tx_stmt.where(Transaction.account_id == account_id)
+        if target_currency:
+            future_tx_stmt = future_tx_stmt.where(func.trim(func.upper(Account.currency)) == target_currency)
+        if not include_debts:
+            future_tx_stmt = future_tx_stmt.where(Account.account_type != "Credit Card")
+            future_tx_stmt = future_tx_stmt.where(Account.account_type != "Loan")
 
-            running_usd += net_usd
-            running_khr += net_khr
+        start_bal_usd, start_bal_khr = bal_usd, bal_khr
+        for tx_type, tx_amount, acc_currency in session.exec(future_tx_stmt).all():
+            raw = float(tx_amount or 0.0)
+            is_deduction = tx_type.lower().startswith("expense") or raw < 0
+            signed_val = -abs(raw) if is_deduction else abs(raw)
 
-            cash_flow_usd.append({"date": day_str, "balance": running_usd})
-            cash_flow_khr.append({"date": day_str, "balance": running_khr})
+            curr = str(acc_currency or "USD").strip().upper()
+            if curr == "KHR":
+                start_bal_khr -= signed_val  # Step backward in time
+            else:
+                start_bal_usd -= signed_val
+
+        # Step C: Gather transactions within the date range for the charts
+        time_stmt = select(Transaction.transaction_date, Transaction.type, Transaction.amount, Account.currency,
+                           Transaction.description) \
+            .join(Account, Transaction.account_id == Account.id) \
+            .where(
+            Account.user_id == user_id,
+            Transaction.transaction_date >= from_date,
+            Transaction.transaction_date <= to_date
+        )
+
+        if account_id:
+            time_stmt = time_stmt.where(Transaction.account_id == account_id)
+        if target_currency:
+            time_stmt = time_stmt.where(func.trim(func.upper(Account.currency)) == target_currency)
+        if not include_debts:
+            time_stmt = time_stmt.where(Account.account_type != "Credit Card")
+            time_stmt = time_stmt.where(Account.account_type != "Loan")
+
+        daily_bar_usd, daily_bar_khr = {}, {}
+        daily_line_usd, daily_line_khr = {}, {}
+
+        curr_day = from_date
+        while curr_day <= to_date:
+            d_key = curr_day.strftime("%Y-%m-%d")
+            daily_bar_usd[d_key] = 0.0
+            daily_bar_khr[d_key] = 0.0
+            daily_line_usd[d_key] = 0.0
+            daily_line_khr[d_key] = 0.0
+            curr_day += timedelta(days=1)
+
+        for tx_date, tx_type, tx_amount, acc_currency, tx_desc in session.exec(time_stmt).all():
+            d_str = tx_date.strftime("%Y-%m-%d")
+            raw = float(tx_amount or 0.0)
+            is_deduction = tx_type.lower().startswith("expense") or raw < 0
+            signed_val = -abs(raw) if is_deduction else abs(raw)
+            is_baseline = (tx_desc == "Opening Balance Baseline")
+
+            curr = str(acc_currency or "USD").strip().upper()
+            if d_str in daily_line_usd:
+                if curr == "KHR":
+                    daily_line_khr[d_str] += signed_val
+                    if not is_baseline:
+                        daily_bar_khr[d_str] += signed_val
+                else:
+                    daily_line_usd[d_str] += signed_val
+                    if not is_baseline:
+                        daily_bar_usd[d_str] += signed_val
+
+        # Step D: Map aggregated data into the arrays
+        running_usd, running_khr = start_bal_usd, start_bal_khr
+        for day_str in sorted(daily_line_usd.keys()):
+            # Bar chart uses the filtered delta (No baselines, accurately signed)
+            time_series_usd.append({"date": day_str, "amount": round(daily_bar_usd[day_str], 2)})
+            time_series_khr.append({"date": day_str, "amount": round(daily_bar_khr[day_str], 2)})
+
+            # Line chart adds the true financial delta to match reality exactly
+            running_usd += daily_line_usd[day_str]
+            running_khr += daily_line_khr[day_str]
+
+            cash_flow_usd.append({"date": day_str, "balance": round(running_usd, 2)})
+            cash_flow_khr.append({"date": day_str, "balance": round(running_khr, 2)})
 
         # =========================================================
         # 4. FUTURE FORECAST ENGINE (SEPARATED BY CURRENCY)
         # =========================================================
         def calc_currency_future(curr_code: str, starting_balance: float):
-            inc_stmt = select(func.sum(func.abs(Transaction.amount))).join(Account, Transaction.account_id == Account.id).where(
+            inc_stmt = select(func.sum(func.abs(Transaction.amount))).join(Account,
+                                                                           Transaction.account_id == Account.id).where(
                 Account.user_id == user_id,
                 Transaction.type.ilike("income"),
                 Transaction.transaction_date >= from_date,
@@ -249,7 +280,8 @@ def get_custom_analytics_report(
                 func.trim(func.upper(Account.currency)) == curr_code,
                 Transaction.description != "Opening Balance Baseline"
             )
-            exp_stmt = select(func.sum(func.abs(Transaction.amount))).join(Account, Transaction.account_id == Account.id).where(
+            exp_stmt = select(func.sum(func.abs(Transaction.amount))).join(Account,
+                                                                           Transaction.account_id == Account.id).where(
                 Account.user_id == user_id,
                 Transaction.type.ilike("expense"),
                 Transaction.transaction_date >= from_date,
@@ -272,7 +304,6 @@ def get_custom_analytics_report(
             days_w = max((to_date - from_date).days, 1)
             months_w = max(days_w / 30.0, 1.0)
 
-            # 🟢 Accurate rate calculation per unit type
             if forecast_unit.lower().startswith("day"):
                 rate = (total_inc - total_exp) / float(days_w)
                 prefix = "Day"
@@ -284,7 +315,6 @@ def get_custom_analytics_report(
 
             projections = []
             r_bal = starting_balance
-            # 🟢 Dynamic projection loop matching user's selected step count (e.g., 7 days or 6 months)
             for s in range(1, steps + 1):
                 r_bal += rate
                 projections.append({
