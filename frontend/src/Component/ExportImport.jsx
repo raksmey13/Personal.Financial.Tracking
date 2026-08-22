@@ -3,6 +3,9 @@ import { FaRegEye, FaFileExcel, FaFileCsv } from 'react-icons/fa';
 import axios from 'axios';
 import { accountAPI, exportImportAPI } from '../API';
 
+// 🟢 Define your live Render API URL
+const RENDER_BACKEND_URL = 'https://personal-financial-tracking.onrender.com';
+
 const ExportImport = ({ mode }) => {
   const [accounts, setAccounts] = useState([]);
 
@@ -44,11 +47,11 @@ const ExportImport = ({ mode }) => {
     fetchAccounts();
   }, []);
 
-  // 🟢 SECURE PDF EXPORT HANDLER
+  // 🟢 FIXED PDF EXPORT HANDLER (Explicit Render URL + Auth Header)
   const handleExportPDF = async () => {
     setIsExportingPdf(true);
     try {
-      const token = localStorage.getItem('token'); // Retrieve stored auth token
+      const token = localStorage.getItem('token');
       const params = {
         period: pdfPeriod,
         include_income: pdfIncludeIncome,
@@ -58,10 +61,10 @@ const ExportImport = ({ mode }) => {
       };
       if (pdfAccountId) params.account_id = pdfAccountId;
 
-      const response = await axios.get('/export-import/pdf', {
+      const response = await axios.get(`${RENDER_BACKEND_URL}/export-import/pdf`, {
         params,
         headers: { Authorization: `Bearer ${token}` },
-        responseType: 'blob' // Expect binary PDF stream
+        responseType: 'blob'
       });
 
       const blob = new Blob([response.data], { type: 'application/pdf' });
@@ -75,13 +78,13 @@ const ExportImport = ({ mode }) => {
       window.URL.revokeObjectURL(downloadUrl);
     } catch (err) {
       console.error("Failed to export PDF:", err);
-      alert("Failed to generate PDF. Please ensure you are logged in.");
+      alert("Failed to generate PDF. Please check your login session.");
     } finally {
       setIsExportingPdf(false);
     }
   };
 
-  // 🟢 SECURE CSV EXPORT HANDLER
+  // 🟢 FIXED CSV EXPORT HANDLER (Explicit Render URL + Auth Header)
   const handleExportCSV = async () => {
     setIsExportingCsv(true);
     try {
@@ -96,7 +99,7 @@ const ExportImport = ({ mode }) => {
       if (csvToDate) params.end_date = csvToDate;
       if (csvAccountId) params.account_id = csvAccountId;
 
-      const response = await axios.get('/export-import/csv', {
+      const response = await axios.get(`${RENDER_BACKEND_URL}/export-import/csv`, {
         params,
         headers: { Authorization: `Bearer ${token}` },
         responseType: 'blob'
@@ -113,7 +116,7 @@ const ExportImport = ({ mode }) => {
       window.URL.revokeObjectURL(downloadUrl);
     } catch (err) {
       console.error("Failed to export CSV:", err);
-      alert("Failed to export CSV.");
+      alert("Failed to export CSV file.");
     } finally {
       setIsExportingCsv(false);
     }
@@ -155,9 +158,7 @@ const ExportImport = ({ mode }) => {
     <div className="min-h-screen bg-[#F8F9FD] flex items-center justify-center p-6">
       <div className="bg-white p-10 rounded-lg shadow-md w-full max-w-3xl border border-gray-200">
 
-        {/* ========================================== */}
         {/* --- EXPORT PDF MODE --- */}
-        {/* ========================================== */}
         {mode === 'pdf' && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-center mb-8 uppercase tracking-widest">Create File - PDF</h2>
@@ -237,9 +238,7 @@ const ExportImport = ({ mode }) => {
           </div>
         )}
 
-        {/* ========================================== */}
         {/* --- EXPORT CSV MODE --- */}
-        {/* ========================================== */}
         {mode === 'csv' && (
           <div className="space-y-6 text-gray-700">
             <div className="flex items-center gap-6 mb-8">
@@ -353,9 +352,7 @@ const ExportImport = ({ mode }) => {
           </div>
         )}
 
-        {/* ========================================== */}
         {/* --- IMPORT MODE --- */}
-        {/* ========================================== */}
         {mode === 'import' && (
           <div className="space-y-8 text-center">
             <h2 className="text-2xl font-medium text-gray-600 uppercase tracking-wide">Import CSV or Excel File</h2>
