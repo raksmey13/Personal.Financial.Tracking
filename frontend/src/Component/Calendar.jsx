@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FaChevronLeft, FaChevronRight, FaRegCalendarAlt, FaClock, FaDollarSign, FaCreditCard, FaTag } from 'react-icons/fa';
+import { FaChevronLeft, FaChevronRight, FaRegCalendarAlt, FaClock } from 'react-icons/fa';
 import { analyticsAPI } from "../API/index";
 
 const CalendarPage = () => {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
+  // 🟢 FIXED: Open dynamically to today's date instead of hardcoded June
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState({});
   const [selectedDay, setSelectedDay] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -65,14 +66,35 @@ const CalendarPage = () => {
   const selectedDateKey = selectedDay ? formatDayKey(selectedDay) : null;
   const activeDayEvents = selectedDateKey ? (events[selectedDateKey] || []) : [];
 
-  // 💡 HELPER: Maps the event properties directly to your financial system logic
   const getEventCategoryType = (ev) => {
     const titleLower = ev.title?.toLowerCase() || "";
     const typeLower = ev.type?.toLowerCase() || "";
 
     if (typeLower === "transfer" || titleLower.includes("sweep saving")) return "TRANSFER";
     if (typeLower === "income" || titleLower.includes("salary") || titleLower.includes("side job") || titleLower.includes("+")) return "INCOME";
-    return "EXPENSE"; // Default fallback for bills, statements, fuel, etc.
+    return "EXPENSE";
+  };
+
+  // 🟢 HELPER: Formats currency values properly with $ vs ៛ symbols
+  const formatCurrency = (amount, currency = 'USD') => {
+    const isKhr = String(currency).toUpperCase() === 'KHR';
+    const val = Math.abs(amount);
+    if (isKhr) {
+      return `${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}៛`;
+    }
+    return `$${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  // 🟢 HELPER: Calculates Net Daily Cashflow Pip Balance
+  const getDailyNetBalance = (dayEvents) => {
+    let netUsd = 0;
+    dayEvents.forEach(ev => {
+      const type = getEventCategoryType(ev);
+      const amt = Number(ev.amount || 0);
+      if (type === 'INCOME') netUsd += amt;
+      else if (type === 'EXPENSE') netUsd -= amt;
+    });
+    return netUsd;
   };
 
   return (
@@ -110,6 +132,7 @@ const CalendarPage = () => {
             const dayKey = formatDayKey(day);
             const dayEvents = events[dayKey] || [];
             const isSelected = selectedDay === day;
+            const netBalance = getDailyNetBalance(dayEvents);
 
             return (
               <div
@@ -121,7 +144,20 @@ const CalendarPage = () => {
                     : 'bg-white border-gray-100 text-gray-800 hover:bg-gray-50'
                 }`}
               >
-                <span className={`text-xs font-black ${isSelected ? 'text-white' : 'text-gray-400'}`}>{day}</span>
+                <div className="flex justify-between items-center">
+                  <span className={`text-xs font-black ${isSelected ? 'text-white' : 'text-gray-400'}`}>{day}</span>
+
+                  {/* 🟢 Daily Net Flow Pip */}
+                  {dayEvents.length > 0 && netBalance !== 0 && (
+                    <span className={`text-[7px] font-black px-1 rounded ${
+                      isSelected
+                        ? 'bg-white/20 text-white'
+                        : netBalance > 0 ? 'text-emerald-600' : 'text-red-500'
+                    }`}>
+                      {netBalance > 0 ? `+${formatCurrency(netBalance)}` : formatCurrency(netBalance)}
+                    </span>
+                  )}
+                </div>
 
                 {/* Event Bubble Pips */}
                 <div className="space-y-1 mt-1">
@@ -136,7 +172,7 @@ const CalendarPage = () => {
                             ? 'bg-white/20 text-white'
                             : financialType === 'INCOME' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/30'
                             : financialType === 'TRANSFER' ? 'bg-amber-50 text-amber-700 border border-amber-200/30'
-                            : 'bg-red-50 text-red-700 border border-red-200/30' // EXPENSE
+                            : 'bg-red-50 text-red-700 border border-red-200/30'
                         }`}
                       >
                         {ev.title}
@@ -185,7 +221,7 @@ const CalendarPage = () => {
                   className={`p-4 rounded-2xl border flex items-start gap-3 shadow-xs transition-all ${
                     financialType === 'INCOME' ? 'bg-emerald-50/70 border-emerald-200/60 text-emerald-900' :
                     financialType === 'TRANSFER' ? 'bg-amber-50/70 border-amber-200/60 text-amber-900' :
-                    'bg-red-50/70 border-red-200/60 text-red-900' // EXPENSE
+                    'bg-red-50/70 border-red-200/60 text-red-900'
                   }`}
                 >
                   <div className="mt-0.5 text-base">
@@ -196,9 +232,10 @@ const CalendarPage = () => {
                     <p className="text-[10px] font-black uppercase tracking-wider opacity-60 flex items-center gap-1.5">
                       <FaClock size={9} /> {ev.type.replace("_", " ")}
                     </p>
-                    <div className="text-sm font-black font-mono pt-1 flex items-center">
-                      <FaDollarSign size={10} className="opacity-50" />
-                      {ev.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+
+                    {/* 🟢 FIXED: Renders USD ($) or KHR (៛) cleanly based on ev.currency */}
+                    <div className="text-sm font-black font-mono pt-1">
+                      {financialType === 'INCOME' ? '+' : '-'}{formatCurrency(ev.amount, ev.currency)}
                     </div>
                   </div>
                 </div>
