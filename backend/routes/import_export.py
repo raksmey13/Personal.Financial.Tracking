@@ -1,13 +1,13 @@
 import csv
 import io
-from fastapi import APIRouter, HTTPException, UploadFile, File, Query, status
+from fastapi import APIRouter, HTTPException, UploadFile, File, Query, status, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional
 from datetime import datetime, date
 from decimal import Decimal
 from sqlmodel import select, func, extract
 from database import SessionDep
-from models import Transaction, Account, Category
+from models import Transaction, Account, Category, User
 
 # --- EXCEL GENERATION IMPORTS ---
 from openpyxl import Workbook, load_workbook
@@ -21,9 +21,9 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-router = APIRouter(prefix="/export-import", tags=["Export & Import"])
+from .auth import get_current_user
 
-ACTIVE_USER_ID = 1  # Standard local fallback user context
+router = APIRouter(prefix="/export-import", tags=["Export & Import"])
 
 
 # =========================================================
@@ -150,6 +150,7 @@ def download_template():
 @router.get("/csv")
 def export_csv(
         session: SessionDep,
+        current_user: User = Depends(get_current_user),
         start_date: Optional[date] = Query(None),
         end_date: Optional[date] = Query(None),
         account_id: Optional[int] = Query(None),
@@ -158,8 +159,8 @@ def export_csv(
         include_expense: bool = Query(True),
         include_transfer: bool = Query(True)
 ):
-    """Queries PostgreSQL using model.py relationships and streams a filtered CSV file."""
-    statement = select(Transaction).where(Transaction.user_id == ACTIVE_USER_ID)
+    """Queries PostgreSQL using current user context and streams a filtered CSV file."""
+    statement = select(Transaction).where(Transaction.user_id == current_user.id)
 
     if start_date:
         statement = statement.where(Transaction.transaction_date >= start_date)
@@ -224,6 +225,7 @@ def export_csv(
 @router.get("/pdf")
 def export_pdf(
         session: SessionDep,
+        current_user: User = Depends(get_current_user),
         period: Optional[str] = Query("2026"),
         account_id: Optional[int] = Query(None),
         include_income: bool = Query(True),
@@ -231,9 +233,10 @@ def export_pdf(
         include_transfer: bool = Query(True),
         two_column: bool = Query(False)
 ):
-    """Generates and streams a PDF report using ReportLab."""
-    statement = select(Transaction).where(Transaction.user_id == ACTIVE_USER_ID)
+    """Generates and streams a formatted PDF report matching current_user context."""
+    statement = select(Transaction).where(Transaction.user_id == current_user.id)
 
+    # 🟢 FIXED: Handle period filtering robustly
     if period and period.isdigit():
         statement = statement.where(extract('year', Transaction.transaction_date) == int(period))
 
@@ -275,45 +278,63 @@ def export_pdf(
         textColor=colors.HexColor('#1E293B'),
         spaceAfter=12
     )
+    cell_style = ParagraphStyle(
+        'CellText',
+        parent=styles['Normal'],
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor('#1E293B')
+    )
+    cell_header_style = ParagraphStyle(
+        'HeaderCellText',
+        parent=styles['Normal'],
+        fontSize=9,
+        leading=11,
+        fontName='Helvetica-Bold',
+        textColor=colors.whitesmoke
+    )
+
     story.append(Paragraph(f"Transaction Summary Report ({period})", title_style))
     story.append(Spacer(1, 10))
 
-    table_data = [["Date", "Account", "Category", "Type", "Amount", "Description"]]
+    headers = ["Date", "Account", "Category", "Type", "Amount", "Description"]
+    table_data = [[Paragraph(h, cell_header_style) for h in headers]]
 
     for tx in transactions:
         account = session.get(Account, tx.account_id)
         category = session.get(Category, tx.category_id) if tx.category_id else None
 
         acc_name = account.account_name if account else "N/A"
+        curr = str(account.currency if account else "USD").strip().upper()
         cat_name = category.name if category else "Uncategorized"
 
         raw_amount = abs(tx.amount)
-        formatted_amount = f"-${raw_amount:,.2f}" if tx.type.lower() == "expense" else f"${raw_amount:,.2f}"
+        if curr == "KHR":
+            symbol_fmt = f"{raw_amount:,.0f}៛"
+        else:
+            symbol_fmt = f"${raw_amount:,.2f}"
+
+        formatted_amount = f"-{symbol_fmt}" if tx.type.lower() == "expense" else f"+{symbol_fmt}"
 
         table_data.append([
-            str(tx.transaction_date),
-            acc_name,
-            cat_name,
-            tx.type.capitalize(),
-            formatted_amount,
-            tx.description or ""
+            Paragraph(str(tx.transaction_date), cell_style),
+            Paragraph(acc_name, cell_style),
+            Paragraph(cat_name, cell_style),
+            Paragraph(tx.type.capitalize(), cell_style),
+            Paragraph(formatted_amount, cell_style),
+            Paragraph(tx.description or "", cell_style)
         ])
 
-    col_widths = [70, 90, 90, 60, 80, 150]
+    col_widths = [65, 85, 95, 55, 75, 165]
 
     pdf_table = Table(table_data, colWidths=col_widths)
     pdf_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#5C6BC0')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 9),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-        ('TOPPADDING', (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('ALIGN', (4, 0), (4, -1), 'RIGHT'),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
-        ('FONTSIZE', (0, 1), (-1, -1), 8),
     ]))
 
     story.append(pdf_table)
@@ -333,10 +354,13 @@ def export_pdf(
 # 4. UNIVERSAL IMPORT (CSV & EXCEL .XLSX SUPPORTED)
 # =========================================================
 @router.post("/import")
-async def import_file(session: SessionDep, file: UploadFile = File(...)):
+async def import_file(
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+    file: UploadFile = File(...)
+):
     """
-    Parses uploaded CSV or Excel (.xlsx) files, maps foreign keys (Account & Category),
-    inserts Transaction records, and updates Account balances.
+    Parses uploaded CSV or Excel (.xlsx) files under current_user context.
     """
     filename_lower = file.filename.lower()
     is_excel = filename_lower.endswith('.xlsx') or filename_lower.endswith('.xls')
@@ -351,7 +375,6 @@ async def import_file(session: SessionDep, file: UploadFile = File(...)):
     contents = await file.read()
     parsed_rows = []
 
-    # Parse Excel Workbook
     if is_excel:
         try:
             wb = load_workbook(filename=io.BytesIO(contents), data_only=True)
@@ -366,7 +389,6 @@ async def import_file(session: SessionDep, file: UploadFile = File(...)):
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to read Excel file: {str(e)}")
 
-    # Parse CSV File
     else:
         try:
             decoded = contents.decode("utf-8")
@@ -375,14 +397,13 @@ async def import_file(session: SessionDep, file: UploadFile = File(...)):
 
         csv_reader = csv.DictReader(io.StringIO(decoded))
         for row in csv_reader:
-            # Lowercase dict keys for consistent parsing
             parsed_rows.append({k.strip().lower(): v for k, v in row.items() if k})
 
     imported_count = 0
     errors = []
 
     fallback_category = session.exec(
-        select(Category).where(Category.user_id == ACTIVE_USER_ID)
+        select(Category).where(Category.user_id == current_user.id)
     ).first()
 
     for line_num, row in enumerate(parsed_rows, start=2):
@@ -416,7 +437,7 @@ async def import_file(session: SessionDep, file: UploadFile = File(...)):
             account = session.exec(
                 select(Account).where(
                     func.lower(Account.account_name) == func.lower(raw_account),
-                    Account.user_id == ACTIVE_USER_ID,
+                    Account.user_id == current_user.id,
                     Account.is_active == True
                 )
             ).first()
@@ -438,7 +459,7 @@ async def import_file(session: SessionDep, file: UploadFile = File(...)):
             clean_amount = abs(amount_val)
 
             new_tx = Transaction(
-                user_id=ACTIVE_USER_ID,
+                user_id=current_user.id,
                 account_id=account.id,
                 category_id=category_id,
                 transaction_date=tx_date,
