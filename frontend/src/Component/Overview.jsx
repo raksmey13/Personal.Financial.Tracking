@@ -238,266 +238,266 @@ const Overview = () => {
   const cashFlowKHR = dashboardMetrics.cashFlowKHR;
 
   return (
-    <div className="bg-[#E9ECEF] p-4 lg:p-6 pb-24 min-h-screen font-sans w-full">
+    <div className="bg-[#E9ECEF] dark:bg-[#0B0F17] p-4 lg:p-6 pb-24 min-h-screen font-sans w-full transition-colors">
 
-      {/* Currency Switcher */}
-      <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
-        <div className="bg-white p-1 rounded-lg shadow-sm border border-gray-200 flex">
-          <button onClick={() => setGlobalCurrency("USD")} className={`px-3 py-1 rounded-md text-xs font-bold cursor-pointer ${globalCurrency === "USD" ? 'bg-gray-100 text-gray-800' : 'text-gray-400'}`}>USD</button>
-          <button onClick={() => setGlobalCurrency("KHR")} className={`px-3 py-1 rounded-md text-xs font-bold cursor-pointer ${globalCurrency === "KHR" ? 'bg-gray-100 text-gray-800' : 'text-gray-400'}`}>KHR</button>
-        </div>
-      </div>
+  {/* Currency Switcher */}
+  <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
+    <div className="bg-white dark:bg-[#151D2A] p-1 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 flex transition-colors">
+      <button onClick={() => setGlobalCurrency("USD")} className={`px-3 py-1 rounded-md text-xs font-bold cursor-pointer ${globalCurrency === "USD" ? 'bg-gray-100 dark:bg-[#1E293B] text-gray-800 dark:text-gray-100' : 'text-gray-400'}`}>USD</button>
+      <button onClick={() => setGlobalCurrency("KHR")} className={`px-3 py-1 rounded-md text-xs font-bold cursor-pointer ${globalCurrency === "KHR" ? 'bg-gray-100 dark:bg-[#1E293B] text-gray-800 dark:text-gray-100' : 'text-gray-400'}`}>KHR</button>
+    </div>
+  </div>
 
-      <div className="max-w-[1400px] mx-auto grid grid-cols-12 gap-5">
+  <div className="max-w-[1400px] mx-auto grid grid-cols-12 gap-5">
 
-        {/* ================= LEFT COLUMN ================= */}
-        <div className="col-span-12 lg:col-span-4 space-y-5">
+    {/* ================= LEFT COLUMN ================= */}
+    <div className="col-span-12 lg:col-span-4 space-y-5">
 
-          {/* 1. Summary Card */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
-            <h2 className="text-[15px] font-bold text-gray-900 mb-3">Summary</h2>
-            <div className="space-y-3">
+      {/* 1. Summary Card */}
+      <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 transition-colors">
+        <h2 className="text-[15px] font-bold text-gray-900 dark:text-gray-100 mb-3">Summary</h2>
+        <div className="space-y-3">
 
-              {/* Liquid Assets */}
-              <div>
-                <span className="text-gray-600 font-medium text-[13px] block mb-1">Liquid Assets</span>
-                <div className="flex justify-between items-center text-[13px] font-bold text-[#009A00]">
-                  <span>{formatNativeMoney(dashboardMetrics.liquidUSD, "USD")}</span>
-                  <span>{formatNativeMoney(dashboardMetrics.liquidKHR, "KHR")}</span>
-                </div>
-              </div>
-
-              {/* Total Debt */}
-              <div>
-                <span className="text-gray-600 font-medium text-[13px] block mb-1">Total Debt</span>
-                <div className="flex justify-between items-center text-[13px] font-bold text-[#E50914]">
-                  <span>{formatNativeMoney(-Math.abs(dashboardMetrics.debtUSD), "USD")}</span>
-                  {dashboardMetrics.debtKHR > 0 && <span>{formatNativeMoney(-Math.abs(dashboardMetrics.debtKHR), "KHR")}</span>}
-                </div>
-              </div>
-
-              {/* Total Cash Flow (Net Income - Expense) */}
-              <div className="pb-3 border-b border-gray-300">
-                <span className="text-gray-600 font-medium text-[13px] block mb-1">Total Cash Flow</span>
-                <div className="flex justify-between items-center text-[13px] font-bold">
-                  <span className={cashFlowUSD >= 0 ? "text-[#009A00]" : "text-[#E50914]"}>
-                    {formatNativeMoney(cashFlowUSD, "USD")}
-                  </span>
-                  <span className={cashFlowKHR >= 0 ? "text-[#009A00]" : "text-[#E50914]"}>
-                    {formatNativeMoney(cashFlowKHR, "KHR")}
-                  </span>
-                </div>
-              </div>
-
-              {/* Net Worth */}
-              <div className="pt-1 flex justify-between items-center">
-                <span className="text-gray-900 font-bold text-sm">Net Worth</span>
-                <span className="font-bold text-[#009A00] text-sm tracking-wide">
-                  {formatNativeMoney(globalCurrency === "KHR" ? dashboardMetrics.netWorthKHR : dashboardMetrics.netWorthUSD, globalCurrency)}
-                </span>
-              </div>
+          {/* Liquid Assets */}
+          <div>
+            <span className="text-gray-600 dark:text-gray-400 font-medium text-[13px] block mb-1">Liquid Assets</span>
+            <div className="flex justify-between items-center text-[13px] font-bold text-[#009A00] dark:text-green-400">
+              <span>{formatNativeMoney(dashboardMetrics.liquidUSD, "USD")}</span>
+              <span>{formatNativeMoney(dashboardMetrics.liquidKHR, "KHR")}</span>
             </div>
           </div>
 
-          {/* 2. Accounts Card (Clean Negative Sign Fix for Loans) */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4">
-            <div className="flex justify-between items-center mb-1">
-              <h2 className="text-[15px] font-bold text-gray-900">Accounts</h2>
-              <span className="text-gray-400 font-black cursor-pointer text-lg leading-none">⋮</span>
+          {/* Total Debt */}
+          <div>
+            <span className="text-gray-600 dark:text-gray-400 font-medium text-[13px] block mb-1">Total Debt</span>
+            <div className="flex justify-between items-center text-[13px] font-bold text-[#E50914] dark:text-red-400">
+              <span>{formatNativeMoney(-Math.abs(dashboardMetrics.debtUSD), "USD")}</span>
+              {dashboardMetrics.debtKHR > 0 && <span>{formatNativeMoney(-Math.abs(dashboardMetrics.debtKHR), "KHR")}</span>}
             </div>
-
-            {accounts.filter(a => a.is_active !== false && !String(a.account_type || '').toLowerCase().includes('credit')).length === 0 ? (
-              <div className="text-xs text-gray-400 italic py-2">No linked accounts.</div>
-            ) : (
-              accounts
-                .filter(a => a.is_active !== false && !String(a.account_type || '').toLowerCase().includes('credit'))
-                .slice(0, 5)
-                .map((acc, idx) => {
-                  const rawBal = Number(acc.balance) || 0;
-                  const accCurrency = String(acc.currency || "USD").toUpperCase().trim();
-                  const typeStr = String(acc.account_type || '').toLowerCase();
-                  const isLoan = typeStr.includes("loan") || typeStr.includes("mortgage") || rawBal < 0;
-
-                  return (
-                    <div key={acc.id} className={`flex justify-between items-start ${idx !== 0 ? 'pt-3' : ''} border-b border-gray-100 last:border-0 pb-3`}>
-                      <span className="font-medium text-gray-800 text-[13px] capitalize">{acc.account_name || acc.name}</span>
-                      <div className="text-right leading-tight">
-                        <span className={`font-bold text-[13px] block ${isLoan ? 'text-[#E50914]' : 'text-[#009A00]'}`}>
-                          {formatMoney(Math.abs(rawBal), accCurrency, isLoan)}
-                        </span>
-                        <span className="text-[10px] text-gray-500 font-medium capitalize block">
-                          {getAccountTypeLabel(acc)} ({accCurrency})
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-            )}
           </div>
 
-          {/* 3. Credit Card Utilization Card */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-3">
-            <div className="flex justify-between items-start">
-              <div className="leading-tight">
-                <span className="font-bold text-gray-900 text-[13px] block">Credit Card Utilization</span>
-                <span className="text-[11px] text-gray-500 font-medium">
-                  {formatMoney(dashboardMetrics.creditCardDebtUSD, "USD")} / {formatMoney(creditLimitUSD, "USD")} Limit
-                </span>
-              </div>
-              <span className="font-bold text-[#E50914] text-[13px]">{formatMoney(dashboardMetrics.creditCardDebtUSD, "USD")}</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-2 bg-gray-200 overflow-hidden rounded-full">
-                <div
-                  style={{ width: `${Math.min((dashboardMetrics.creditCardDebtUSD / creditLimitUSD) * 100, 100)}%` }}
-                  className="h-full bg-[#E50914]"
-                />
-              </div>
-              <span className="text-xs font-bold text-gray-800">
-                {Math.round((dashboardMetrics.creditCardDebtUSD / creditLimitUSD) * 100)}%
+          {/* Total Cash Flow (Net Income - Expense) */}
+          <div className="pb-3 border-b border-gray-300 dark:border-gray-700">
+            <span className="text-gray-600 dark:text-gray-400 font-medium text-[13px] block mb-1">Total Cash Flow</span>
+            <div className="flex justify-between items-center text-[13px] font-bold">
+              <span className={cashFlowUSD >= 0 ? "text-[#009A00] dark:text-green-400" : "text-[#E50914] dark:text-red-400"}>
+                {formatNativeMoney(cashFlowUSD, "USD")}
+              </span>
+              <span className={cashFlowKHR >= 0 ? "text-[#009A00] dark:text-green-400" : "text-[#E50914] dark:text-red-400"}>
+                {formatNativeMoney(cashFlowKHR, "KHR")}
               </span>
             </div>
           </div>
 
-          {/* 4. Weekly Bar Chart Card */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-2">
-            <h2 className="text-[11px] font-bold text-gray-800">Weekly Spending (Last 7 Days)</h2>
-            <div className="h-56 w-full pt-2">
-              <Bar data={weeklyBarData} options={weeklyBarOptions} />
-            </div>
+          {/* Net Worth */}
+          <div className="pt-1 flex justify-between items-center">
+            <span className="text-gray-900 dark:text-gray-100 font-bold text-sm">Net Worth</span>
+            <span className="font-bold text-[#009A00] dark:text-green-400 text-sm tracking-wide">
+              {formatNativeMoney(globalCurrency === "KHR" ? dashboardMetrics.netWorthKHR : dashboardMetrics.netWorthUSD, globalCurrency)}
+            </span>
           </div>
+        </div>
+      </div>
 
+      {/* 2. Accounts Card */}
+      <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-4 transition-colors">
+        <div className="flex justify-between items-center mb-1">
+          <h2 className="text-[15px] font-bold text-gray-900 dark:text-gray-100">Accounts</h2>
+          <span className="text-gray-400 dark:text-gray-500 font-black cursor-pointer text-lg leading-none">⋮</span>
         </div>
 
-        {/* ================= RIGHT COLUMN ================= */}
-        <div className="col-span-12 lg:col-span-8 space-y-5">
+        {accounts.filter(a => a.is_active !== false && !String(a.account_type || '').toLowerCase().includes('credit')).length === 0 ? (
+          <div className="text-xs text-gray-400 italic py-2">No linked accounts.</div>
+        ) : (
+          accounts
+            .filter(a => a.is_active !== false && !String(a.account_type || '').toLowerCase().includes('credit'))
+            .slice(0, 5)
+            .map((acc, idx) => {
+              const rawBal = Number(acc.balance) || 0;
+              const accCurrency = String(acc.currency || "USD").toUpperCase().trim();
+              const typeStr = String(acc.account_type || '').toLowerCase();
+              const isLoan = typeStr.includes("loan") || typeStr.includes("mortgage") || rawBal < 0;
 
-          {/* 1. Top Row Doughnuts (Includes explicit KHR Expense rendering) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-            {/* This Month Card */}
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
-              <div className="w-24 h-24 relative flex items-center justify-center">
-                <Doughnut data={monthChartData(monthlyBreakdown.progressUSD)} options={monthChartOptions} />
-              </div>
-              <div className="flex-1 text-right pl-4 space-y-1.5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[13px] font-bold text-gray-900">This Month</span>
-                  <div className="flex flex-col text-[8px] text-[#009A00] font-bold">
-                    <span>▲</span>
-                    <span className="text-[#E50914]">▼</span>
+              return (
+                <div key={acc.id} className={`flex justify-between items-start ${idx !== 0 ? 'pt-3' : ''} border-b border-gray-100 dark:border-gray-800 last:border-0 pb-3`}>
+                  <span className="font-medium text-gray-800 dark:text-gray-200 text-[13px] capitalize">{acc.account_name || acc.name}</span>
+                  <div className="text-right leading-tight">
+                    <span className={`font-bold text-[13px] block ${isLoan ? 'text-[#E50914] dark:text-red-400' : 'text-[#009A00] dark:text-green-400'}`}>
+                      {formatMoney(Math.abs(rawBal), accCurrency, isLoan)}
+                    </span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium capitalize block">
+                      {getAccountTypeLabel(acc)} ({accCurrency})
+                    </span>
                   </div>
                 </div>
+              );
+            })
+        )}
+      </div>
 
-                {/* USD Breakdown */}
-                {monthlyBreakdown.incomeUSD > 0 && (
-                  <div className="font-bold text-[#009A00] text-[13px]">{formatMoney(monthlyBreakdown.incomeUSD, "USD")}</div>
-                )}
-                {monthlyBreakdown.spentUSD > 0 && (
-                  <div className="font-bold text-[#E50914] text-[13px] pb-1 border-b border-gray-200">
-                    {formatMoney(monthlyBreakdown.spentUSD, "USD", true)}
-                  </div>
-                )}
+      {/* 3. Credit Card Utilization Card */}
+      <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-3 transition-colors">
+        <div className="flex justify-between items-start">
+          <div className="leading-tight">
+            <span className="font-bold text-gray-900 dark:text-gray-100 text-[13px] block">Credit Card Utilization</span>
+            <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">
+              {formatMoney(dashboardMetrics.creditCardDebtUSD, "USD")} / {formatMoney(creditLimitUSD, "USD")} Limit
+            </span>
+          </div>
+          <span className="font-bold text-[#E50914] dark:text-red-400 text-[13px]">{formatMoney(dashboardMetrics.creditCardDebtUSD, "USD")}</span>
+        </div>
 
-                {/* KHR Breakdown */}
-                {monthlyBreakdown.incomeKHR > 0 && (
-                  <div className="font-bold text-[#009A00] text-[13px]">{formatMoney(monthlyBreakdown.incomeKHR, "KHR")}</div>
-                )}
-                {monthlyBreakdown.spentKHR > 0 && (
-                  <div className="font-bold text-[#E50914] text-[13px] pb-1 border-b border-gray-200">
-                    {formatMoney(monthlyBreakdown.spentKHR, "KHR", true)}
-                  </div>
-                )}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 overflow-hidden rounded-full">
+            <div
+              style={{ width: `${Math.min((dashboardMetrics.creditCardDebtUSD / creditLimitUSD) * 100, 100)}%` }}
+              className="h-full bg-[#E50914]"
+            />
+          </div>
+          <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
+            {Math.round((dashboardMetrics.creditCardDebtUSD / creditLimitUSD) * 100)}%
+          </span>
+        </div>
+      </div>
 
-                {/* Net Flow Summary */}
-                <div className={`pt-1 font-bold text-[13px] tracking-wide ${cashFlowUSD >= 0 ? "text-[#009A00]" : "text-[#E50914]"}`}>
-                  {formatMoney(cashFlowUSD, "USD")}
-                </div>
+      {/* 4. Weekly Bar Chart Card */}
+      <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-2 transition-colors">
+        <h2 className="text-[11px] font-bold text-gray-800 dark:text-gray-200">Weekly Spending (Last 7 Days)</h2>
+        <div className="h-56 w-full pt-2">
+          <Bar data={weeklyBarData} options={weeklyBarOptions} />
+        </div>
+      </div>
+
+    </div>
+
+    {/* ================= RIGHT COLUMN ================= */}
+    <div className="col-span-12 lg:col-span-8 space-y-5">
+
+      {/* 1. Top Row Doughnuts */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+        {/* This Month Card */}
+        <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 flex items-center justify-between transition-colors">
+          <div className="w-24 h-24 relative flex items-center justify-center">
+            <Doughnut data={monthChartData(monthlyBreakdown.progressUSD)} options={monthChartOptions} />
+          </div>
+          <div className="flex-1 text-right pl-4 space-y-1.5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[13px] font-bold text-gray-900 dark:text-gray-100">This Month</span>
+              <div className="flex flex-col text-[8px] text-[#009A00] font-bold">
+                <span>▲</span>
+                <span className="text-[#E50914]">▼</span>
               </div>
             </div>
 
-            {/* Last Month Card */}
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
-              <div className="w-24 h-24 relative flex items-center justify-center">
-                <Doughnut data={monthChartData(0)} options={monthChartOptions} />
+            {/* USD Breakdown */}
+            {monthlyBreakdown.incomeUSD > 0 && (
+              <div className="font-bold text-[#009A00] dark:text-green-400 text-[13px]">{formatMoney(monthlyBreakdown.incomeUSD, "USD")}</div>
+            )}
+            {monthlyBreakdown.spentUSD > 0 && (
+              <div className="font-bold text-[#E50914] dark:text-red-400 text-[13px] pb-1 border-b border-gray-200 dark:border-gray-700">
+                {formatMoney(monthlyBreakdown.spentUSD, "USD", true)}
               </div>
-              <div className="flex-1 text-right pl-4 space-y-1.5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[13px] font-bold text-gray-900">Last Month</span>
-                </div>
-                <div className="font-bold text-[#009A00] text-[13px]">$0.00</div>
-                <div className="font-bold text-[#E50914] text-[13px] pb-2 border-b border-gray-300">$0.00</div>
-                <div className="pt-1 font-bold text-[#009A00] text-[13px] tracking-wide">$0.00</div>
+            )}
+
+            {/* KHR Breakdown */}
+            {monthlyBreakdown.incomeKHR > 0 && (
+              <div className="font-bold text-[#009A00] dark:text-green-400 text-[13px]">{formatMoney(monthlyBreakdown.incomeKHR, "KHR")}</div>
+            )}
+            {monthlyBreakdown.spentKHR > 0 && (
+              <div className="font-bold text-[#E50914] dark:text-red-400 text-[13px] pb-1 border-b border-gray-200 dark:border-gray-700">
+                {formatMoney(monthlyBreakdown.spentKHR, "KHR", true)}
               </div>
-            </div>
+            )}
 
-          </div>
-
-          {/* 2. Middle Row Line Chart */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-2">
-            <h3 className="text-center text-[11px] font-bold text-gray-800">Net Worth Trajectory (6 Months)</h3>
-            <div className="h-56 w-full">
-              <Line data={trendLineData} options={trendLineOptions} />
+            {/* Net Flow Summary */}
+            <div className={`pt-1 font-bold text-[13px] tracking-wide ${cashFlowUSD >= 0 ? "text-[#009A00] dark:text-green-400" : "text-[#E50914] dark:text-red-400"}`}>
+              {formatMoney(cashFlowUSD, "USD")}
             </div>
           </div>
+        </div>
 
-          {/* 3. Bottom Row Budgets Card */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-5">
-            <h3 className="text-[13px] font-bold text-gray-900">Active Budgets</h3>
-            <div className="space-y-5">
-              {budgets.length === 0 ? (
-                <div className="text-xs text-gray-400 italic text-center py-2">No active budgets configured.</div>
-              ) : (
-                budgets.slice(0, 5).map((item, idx) => {
-                  const spentVal = Number(item.spent ?? item.spent_amount ?? 0);
-                  const capVal = Number(item.total ?? item.budget_limit ?? item.cap ?? 0);
-                  const isExpired = item.end && new Date(item.end) < new Date();
-                  const pct = item.progress || (capVal > 0 ? Math.round((spentVal / capVal) * 100) : 0);
-
-                  return (
-                    <div key={item.id || idx} className="flex items-center gap-4 text-xs">
-                      <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm flex-shrink-0">
-                        <FaWallet />
-                      </div>
-                      <div className="flex-1 space-y-1.5">
-
-                        <div className="flex justify-between items-end">
-                          <div className="leading-tight flex items-center gap-2">
-                            <span className="font-bold text-gray-800 text-[12px] block">{item.name || item.category_name || "Budget Strategy"}</span>
-                            {isExpired && (
-                              <span className="bg-red-100 text-red-600 text-[8px] font-bold px-1.5 py-0.5 rounded">Expired</span>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <span className="text-[10px] text-gray-600 font-bold block">{pct}%</span>
-                          </div>
-                        </div>
-
-                        <div className="w-full h-2 bg-gray-100 overflow-hidden flex items-center rounded-full">
-                          <div
-                            style={{ width: `${Math.min(pct, 100)}%` }}
-                            className={`h-full ${pct > 100 ? 'bg-red-500' : 'bg-emerald-500'}`}
-                          />
-                        </div>
-
-                        <div className="flex justify-between items-center text-[10px] font-semibold text-gray-500">
-                          <span>Spent: <strong className="text-gray-800">{formatMoney(spentVal, "USD")}</strong></span>
-                          <span>Cap: <strong className="text-gray-800">{formatMoney(capVal, "USD")}</strong></span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+        {/* Last Month Card */}
+        <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 flex items-center justify-between transition-colors">
+          <div className="w-24 h-24 relative flex items-center justify-center">
+            <Doughnut data={monthChartData(0)} options={monthChartOptions} />
           </div>
-
+          <div className="flex-1 text-right pl-4 space-y-1.5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[13px] font-bold text-gray-900 dark:text-gray-100">Last Month</span>
+            </div>
+            <div className="font-bold text-[#009A00] dark:text-green-400 text-[13px]">$0.00</div>
+            <div className="font-bold text-[#E50914] dark:text-red-400 text-[13px] pb-2 border-b border-gray-300 dark:border-gray-700">$0.00</div>
+            <div className="pt-1 font-bold text-[#009A00] dark:text-green-400 text-[13px] tracking-wide">$0.00</div>
+          </div>
         </div>
 
       </div>
 
-      {/* Floating Action Buttons */}
+      {/* 2. Middle Row Line Chart */}
+      <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-2 transition-colors">
+        <h3 className="text-center text-[11px] font-bold text-gray-800 dark:text-gray-200">Net Worth Trajectory (6 Months)</h3>
+        <div className="h-56 w-full">
+          <Line data={trendLineData} options={trendLineOptions} />
+        </div>
+      </div>
+
+      {/* 3. Bottom Row Budgets Card */}
+      <div className="bg-white dark:bg-[#151D2A] p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-5 transition-colors">
+        <h3 className="text-[13px] font-bold text-gray-900 dark:text-gray-100">Active Budgets</h3>
+        <div className="space-y-5">
+          {budgets.length === 0 ? (
+            <div className="text-xs text-gray-400 italic text-center py-2">No active budgets configured.</div>
+          ) : (
+            budgets.slice(0, 5).map((item, idx) => {
+              const spentVal = Number(item.spent ?? item.spent_amount ?? 0);
+              const capVal = Number(item.total ?? item.budget_limit ?? item.cap ?? 0);
+              const isExpired = item.end && new Date(item.end) < new Date();
+              const pct = item.progress || (capVal > 0 ? Math.round((spentVal / capVal) * 100) : 0);
+
+              return (
+                <div key={item.id || idx} className="flex items-center gap-4 text-xs">
+                  <div className="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                    <FaWallet />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+
+                    <div className="flex justify-between items-end">
+                      <div className="leading-tight flex items-center gap-2">
+                        <span className="font-bold text-gray-800 dark:text-gray-200 text-[12px] block">{item.name || item.category_name || "Budget Strategy"}</span>
+                        {isExpired && (
+                          <span className="bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 text-[8px] font-bold px-1.5 py-0.5 rounded">Expired</span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-gray-600 dark:text-gray-400 font-bold block">{pct}%</span>
+                      </div>
+                    </div>
+
+                    <div className="w-full h-2 bg-gray-100 dark:bg-gray-700 overflow-hidden flex items-center rounded-full">
+                      <div
+                        style={{ width: `${Math.min(pct, 100)}%` }}
+                        className={`h-full ${pct > 100 ? 'bg-red-500' : 'bg-emerald-500'}`}
+                      />
+                    </div>
+
+                    <div className="flex justify-between items-center text-[10px] font-semibold text-gray-500 dark:text-gray-400">
+                      <span>Spent: <strong className="text-gray-800 dark:text-gray-200">{formatMoney(spentVal, "USD")}</strong></span>
+                      <span>Cap: <strong className="text-gray-800 dark:text-gray-200">{formatMoney(capVal, "USD")}</strong></span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  {/* Floating Action Buttons */}
       <div className="fixed bottom-6 right-6 flex flex-col gap-2 z-[100]">
         <button
           type="button"
