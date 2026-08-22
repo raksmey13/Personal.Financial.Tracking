@@ -146,133 +146,131 @@ const CalendarPage = () => {
 
             return (
               <div
-                key={`day-${day}`}
-                onClick={() => setSelectedDay(day)}
-                className={`min-h-[75px] p-2 rounded-xl border flex flex-col justify-between cursor-pointer transition-all ${
-                  isSelected
-                    ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200'
-                    : 'bg-white border-gray-100 text-gray-800 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className={`text-xs font-black ${isSelected ? 'text-white' : 'text-gray-400'}`}>{day}</span>
+            key={`day-${day}`}
+            onClick={() => setSelectedDay(day)}
+            className={`min-h-[75px] p-2 rounded-xl border flex flex-col justify-between cursor-pointer transition-all ${
+              isSelected
+                ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200 dark:shadow-none'
+                : 'bg-white dark:bg-[#151D2A] border-gray-100 dark:border-gray-800 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-[#1E293B]'
+            }`}
+          >
+            <div className="flex justify-between items-start">
+              <span className={`text-xs font-black ${isSelected ? 'text-white' : 'text-gray-400 dark:text-gray-500'}`}>{day}</span>
 
-                  {/* 🟢 SEPARATED DUAL CURRENCY NET FLOW PIPS */}
-                  {dayEvents.length > 0 && (
-                    <div className="flex flex-col items-end gap-0.5">
-                      {netUsd !== 0 && (
-                        <span className={`text-[7px] font-black px-1 rounded ${
-                          isSelected
-                            ? 'bg-white/20 text-white'
-                            : netUsd > 0 ? 'text-emerald-600' : 'text-red-500'
-                        }`}>
-                          {netUsd > 0 ? `+${formatCurrency(netUsd, 'USD')}` : `-${formatCurrency(netUsd, 'USD')}`}
-                        </span>
-                      )}
-                      {netKhr !== 0 && (
-                        <span className={`text-[7px] font-black px-1 rounded ${
-                          isSelected
-                            ? 'bg-white/20 text-white'
-                            : netKhr > 0 ? 'text-emerald-600' : 'text-red-500'
-                        }`}>
-                          {netKhr > 0 ? `+${formatCurrency(netKhr, 'KHR')}` : `-${formatCurrency(netKhr, 'KHR')}`}
-                        </span>
-                      )}
-                    </div>
+              {/* 🟢 SEPARATED DUAL CURRENCY NET FLOW PIPS */}
+              {dayEvents.length > 0 && (
+                <div className="flex flex-col items-end gap-0.5">
+                  {netUsd !== 0 && (
+                    <span className={`text-[7px] font-black px-1 rounded ${
+                      isSelected
+                        ? 'bg-white/20 text-white'
+                        : netUsd > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+                    }`}>
+                      {netUsd > 0 ? `+${formatCurrency(netUsd, 'USD')}` : `-${formatCurrency(netUsd, 'USD')}`}
+                    </span>
+                  )}
+                  {netKhr !== 0 && (
+                    <span className={`text-[7px] font-black px-1 rounded ${
+                      isSelected
+                        ? 'bg-white/20 text-white'
+                        : netKhr > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+                    }`}>
+                      {netKhr > 0 ? `+${formatCurrency(netKhr, 'KHR')}` : `-${formatCurrency(netKhr, 'KHR')}`}
+                    </span>
                   )}
                 </div>
+              )}
+            </div>
 
-                {/* Event Bubble Pips */}
-                <div className="space-y-1 mt-1">
-                  {dayEvents.slice(0, 2).map(ev => {
-                    const financialType = getEventCategoryType(ev);
+            {/* Event Bubble Pips */}
+            <div className="space-y-1 mt-1">
+              {dayEvents.slice(0, 2).map(ev => {
+                const financialType = getEventCategoryType(ev);
 
-                    return (
-                      <div
-                        key={ev.id}
-                        className={`text-[8px] px-1 py-0.5 rounded font-black truncate max-w-full ${
-                          isSelected
-                            ? 'bg-white/20 text-white'
-                            : financialType === 'INCOME' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/30'
-                            : financialType === 'TRANSFER' ? 'bg-amber-50 text-amber-700 border border-amber-200/30'
-                            : 'bg-red-50 text-red-700 border border-red-200/30'
-                        }`}
-                      >
-                        {ev.title}
-                      </div>
-                    );
-                  })}
-                  {dayEvents.length > 2 && (
-                    <div className={`text-[7px] text-center font-extrabold ${isSelected ? 'text-white/80' : 'text-gray-400'}`}>
-                      + {dayEvents.length - 2} more
-                    </div>
-                  )}
+                return (
+                  <div
+                    key={ev.id}
+                    className={`text-[8px] px-1 py-0.5 rounded font-black truncate max-w-full ${
+                      isSelected
+                        ? 'bg-white/20 text-white'
+                        : financialType === 'INCOME' ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/30 dark:border-emerald-800/40'
+                        : financialType === 'TRANSFER' ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200/30 dark:border-amber-800/40'
+                        : 'bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 border border-red-200/30 dark:border-red-800/40'
+                    }`}
+                  >
+                    {ev.title}
+                  </div>
+                );
+              })}
+              {dayEvents.length > 2 && (
+                <div className={`text-[7px] text-center font-extrabold ${isSelected ? 'text-white/80' : 'text-gray-400 dark:text-gray-500'}`}>
+                  + {dayEvents.length - 2} more
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+
+  {/* 2. SIDE EVENTS PREVIEW DETAIL FEED */}
+  <div className="col-span-12 lg:col-span-4 bg-white dark:bg-[#151D2A] rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 flex flex-col gap-4 transition-colors">
+    <div>
+      <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
+        <FaRegCalendarAlt /> Day Target Specifics
+      </h3>
+      <p className="text-[11px] text-gray-400 dark:text-gray-500 font-semibold mt-0.5">
+        {selectedDay ? `Commitments for ${monthNames[month]} ${selectedDay}, ${year}` : "Select a day node card cell to audit schedules"}
+      </p>
+    </div>
+
+    <div className="flex-1 overflow-y-auto space-y-3 pr-1 max-h-[420px] custom-scrollbar">
+      {!selectedDay ? (
+        <div className="text-center py-20 text-xs text-gray-400 dark:text-gray-500 italic font-semibold border border-dashed border-gray-100 dark:border-gray-800 rounded-2xl bg-gray-50/50 dark:bg-[#1E293B]/40 p-4">
+          👈 Tap any calendar day element cell grid block to overview upcoming commitments.
+        </div>
+      ) : activeDayEvents.length === 0 ? (
+        <div className="text-center py-20 text-xs text-gray-400 dark:text-gray-500 font-bold bg-gray-50/40 dark:bg-[#1E293B]/40 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+          🎉 Schedule Clear: No obligations or deadlines fall on this date node.
+        </div>
+      ) : (
+        activeDayEvents.map(ev => {
+          const financialType = getEventCategoryType(ev);
+          const isExpense = financialType === 'EXPENSE';
+
+          return (
+            <div
+              key={ev.id}
+              className={`p-4 rounded-2xl border flex items-start gap-3 shadow-xs transition-all ${
+                financialType === 'INCOME' ? 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-200/60 dark:border-emerald-900/50 text-emerald-900 dark:text-emerald-200' :
+                financialType === 'TRANSFER' ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-200/60 dark:border-amber-900/50 text-amber-900 dark:text-amber-200' :
+                'bg-red-50/70 dark:bg-red-950/40 border-red-200/60 dark:border-red-900/50 text-red-900 dark:text-red-200'
+              }`}
+            >
+              <div className="mt-0.5 text-base">
+                {financialType === "INCOME" ? "💰" : financialType === "TRANSFER" ? "🔄" : "💸"}
+              </div>
+              <div className="flex-1 space-y-1">
+                <h4 className="text-xs font-black uppercase tracking-wide leading-tight">
+                  {ev.title.replace(/^[^:]+:\s*[-+]+/, ev.title.split(':')[0] + ': ')}
+                </h4>
+                <p className="text-[10px] font-black uppercase tracking-wider opacity-60 flex items-center gap-1.5">
+                  <FaClock size={9} /> {ev.type.replace("_", " ")}
+                </p>
+
+                <div className="text-sm font-black font-mono pt-1">
+                  {isExpense ? '-' : '+'}{formatCurrency(ev.amount, ev.currency)}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 2. SIDE EVENTS PREVIEW DETAIL FEED */}
-      <div className="col-span-12 lg:col-span-4 bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col gap-4">
-        <div>
-          <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-            <FaRegCalendarAlt /> Day Target Specifics
-          </h3>
-          <p className="text-[11px] text-gray-400 font-semibold mt-0.5">
-            {selectedDay ? `Commitments for ${monthNames[month]} ${selectedDay}, ${year}` : "Select a day node card cell to audit schedules"}
-          </p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto space-y-3 pr-1 max-h-[420px]">
-          {!selectedDay ? (
-            <div className="text-center py-20 text-xs text-gray-400 italic font-semibold border border-dashed border-gray-100 rounded-2xl bg-gray-50/50 p-4">
-              👈 Tap any calendar day element cell grid block to overview upcoming commitments.
             </div>
-          ) : activeDayEvents.length === 0 ? (
-            <div className="text-center py-20 text-xs text-gray-400 font-bold bg-gray-50/40 rounded-2xl p-4 border border-gray-100">
-              🎉 Schedule Clear: No obligations or deadlines fall on this date node.
-            </div>
-          ) : (
-            activeDayEvents.map(ev => {
-              const financialType = getEventCategoryType(ev);
-              const isExpense = financialType === 'EXPENSE';
-
-              return (
-                <div
-                  key={ev.id}
-                  className={`p-4 rounded-2xl border flex items-start gap-3 shadow-xs transition-all ${
-                    financialType === 'INCOME' ? 'bg-emerald-50/70 border-emerald-200/60 text-emerald-900' :
-                    financialType === 'TRANSFER' ? 'bg-amber-50/70 border-amber-200/60 text-amber-900' :
-                    'bg-red-50/70 border-red-200/60 text-red-900'
-                  }`}
-                >
-                  <div className="mt-0.5 text-base">
-                    {financialType === "INCOME" ? "💰" : financialType === "TRANSFER" ? "🔄" : "💸"}
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    {/* 🟢 Title stripped of double negative strings */}
-                    <h4 className="text-xs font-black uppercase tracking-wide leading-tight">
-                      {ev.title.replace(/^[^:]+:\s*[-+]+/, ev.title.split(':')[0] + ': ')}
-                    </h4>
-                    <p className="text-[10px] font-black uppercase tracking-wider opacity-60 flex items-center gap-1.5">
-                      <FaClock size={9} /> {ev.type.replace("_", " ")}
-                    </p>
-
-                    {/* 🟢 Clean single-sign currency output */}
-                    <div className="text-sm font-black font-mono pt-1">
-                      {isExpense ? '-' : '+'}{formatCurrency(ev.amount, ev.currency)}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-
+          );
+        })
+      )}
     </div>
+  </div>
+
+</div>
   );
 };
 
