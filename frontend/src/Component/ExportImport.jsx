@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FaRegEye, FaFileExcel, FaFileCsv } from 'react-icons/fa';
-// Import central API client helpers
-import { accountAPI, exportImportAPI } from '../API'; // Adjust path if needed
+import axios from 'axios';
+import { accountAPI, exportImportAPI } from '../API';
 
 const ExportImport = ({ mode }) => {
   const [accounts, setAccounts] = useState([]);
@@ -13,6 +13,7 @@ const ExportImport = ({ mode }) => {
   const [pdfIncludeExpense, setPdfIncludeExpense] = useState(true);
   const [pdfIncludeTransfer, setPdfIncludeTransfer] = useState(true);
   const [pdfTwoColumn, setPdfTwoColumn] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // --- CSV EXPORT STATE ---
   const [csvCategoryType, setCsvCategoryType] = useState('both');
@@ -22,6 +23,7 @@ const ExportImport = ({ mode }) => {
   const [csvIncludeIncome, setCsvIncludeIncome] = useState(true);
   const [csvIncludeExpense, setCsvIncludeExpense] = useState(true);
   const [csvIncludeTransfer, setCsvIncludeTransfer] = useState(true);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
 
   // --- IMPORT STATE ---
   const [selectedFile, setSelectedFile] = useState(null);
@@ -42,40 +44,85 @@ const ExportImport = ({ mode }) => {
     fetchAccounts();
   }, []);
 
-  // --- HANDLERS ---
-  const handleExportPDF = () => {
-    const params = {
-      period: pdfPeriod,
-      include_income: pdfIncludeIncome,
-      include_expense: pdfIncludeExpense,
-      include_transfer: pdfIncludeTransfer,
-      two_column: pdfTwoColumn,
-    };
-    if (pdfAccountId) params.account_id = pdfAccountId;
+  // 🟢 SECURE PDF EXPORT HANDLER
+  const handleExportPDF = async () => {
+    setIsExportingPdf(true);
+    try {
+      const token = localStorage.getItem('token'); // Retrieve stored auth token
+      const params = {
+        period: pdfPeriod,
+        include_income: pdfIncludeIncome,
+        include_expense: pdfIncludeExpense,
+        include_transfer: pdfIncludeTransfer,
+        two_column: pdfTwoColumn,
+      };
+      if (pdfAccountId) params.account_id = pdfAccountId;
 
-    window.location.href = exportImportAPI.exportPDF(params);
+      const response = await axios.get('/export-import/pdf', {
+        params,
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob' // Expect binary PDF stream
+      });
+
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `transaction_summary_${pdfPeriod}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error("Failed to export PDF:", err);
+      alert("Failed to generate PDF. Please ensure you are logged in.");
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
-  const handleExportCSV = () => {
-    const params = {
-      category_type: csvCategoryType,
-      include_income: csvIncludeIncome,
-      include_expense: csvIncludeExpense,
-      include_transfer: csvIncludeTransfer,
-    };
-    if (csvFromDate) params.start_date = csvFromDate;
-    if (csvToDate) params.end_date = csvToDate;
-    if (csvAccountId) params.account_id = csvAccountId;
+  // 🟢 SECURE CSV EXPORT HANDLER
+  const handleExportCSV = async () => {
+    setIsExportingCsv(true);
+    try {
+      const token = localStorage.getItem('token');
+      const params = {
+        category_type: csvCategoryType,
+        include_income: csvIncludeIncome,
+        include_expense: csvIncludeExpense,
+        include_transfer: csvIncludeTransfer,
+      };
+      if (csvFromDate) params.start_date = csvFromDate;
+      if (csvToDate) params.end_date = csvToDate;
+      if (csvAccountId) params.account_id = csvAccountId;
 
-    window.location.href = exportImportAPI.exportCSV(params);
+      const response = await axios.get('/export-import/csv', {
+        params,
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `ledger_export_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error("Failed to export CSV:", err);
+      alert("Failed to export CSV.");
+    } finally {
+      setIsExportingCsv(false);
+    }
   };
 
-  // 🟢 Download Excel Template (.xlsx)
   const handleDownloadExcelTemplate = () => {
     window.location.href = `${exportImportAPI.getTemplateUrl()}/excel`;
   };
 
-  // 🟢 Download Standard CSV Template
   const handleDownloadCsvTemplate = () => {
     window.location.href = exportImportAPI.getTemplateUrl();
   };
@@ -181,9 +228,10 @@ const ExportImport = ({ mode }) => {
 
                <button
                  onClick={handleExportPDF}
-                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded text-sm uppercase font-semibold transition-colors"
+                 disabled={isExportingPdf}
+                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded text-sm uppercase font-semibold transition-colors disabled:bg-gray-400"
                >
-                 Export PDF File
+                 {isExportingPdf ? 'Exporting...' : 'Export PDF File'}
                </button>
             </div>
           </div>
@@ -296,22 +344,22 @@ const ExportImport = ({ mode }) => {
                </div>
                <button
                  onClick={handleExportCSV}
-                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded text-sm uppercase transition-colors font-semibold"
+                 disabled={isExportingCsv}
+                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded text-sm uppercase transition-colors font-semibold disabled:bg-gray-400"
                >
-                 Export CSV File
+                 {isExportingCsv ? 'Exporting...' : 'Export CSV File'}
                </button>
             </div>
           </div>
         )}
 
         {/* ========================================== */}
-        {/* --- IMPORT MODE (CSV & EXCEL SUPPORTED) --- */}
+        {/* --- IMPORT MODE --- */}
         {/* ========================================== */}
         {mode === 'import' && (
           <div className="space-y-8 text-center">
             <h2 className="text-2xl font-medium text-gray-600 uppercase tracking-wide">Import CSV or Excel File</h2>
 
-            {/* 🟢 Updated File Selector (Accepts both .csv and .xlsx) */}
             <div className="flex flex-col items-center justify-center gap-4 bg-gray-50 p-6 border rounded border-dashed">
               <input
                 type="file"
@@ -338,7 +386,6 @@ const ExportImport = ({ mode }) => {
             )}
 
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-10">
-              {/* 🟢 Dual Template Buttons */}
               <div className="flex gap-2">
                 <button
                   type="button"
