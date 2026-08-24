@@ -62,6 +62,7 @@ class GeminiParsedTransaction(BaseModel):
     amount: float
     currency: str = "USD"
     category: str = "Uncategorized"
+    bank_name: str = "" # 🟢 ADDED bank_name to schema
 
 
 class ChatRequest(BaseModel):
@@ -196,27 +197,32 @@ def parse_khqr_receipt(text: str):
     return amount, raw_name, raw_account_num
 
 
-# 🟢 Direct Vision Function with Exact Currency Detection and Bank Guardrails
-def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal], str, str]:
+# 🟢 UPDATED: Direct Vision Function with Exact Currency Detection and Bank Guardrails
+def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal], str, str, str]:
     """
-    Passes image bytes directly to Gemini Vision to extract exact amount, merchant name, and currency (USD or KHR).
+    Passes image bytes directly to Gemini Vision to extract exact amount, merchant name, currency, and issuing bank.
     """
     prompt = """
     Analyze this payment receipt or bank transfer screenshot visually.
 
     CRITICAL EXTRACTION RULES:
-    1. "merchant": Identify the recipient, seller, store, or vendor.
-       - Check top header title, "Transfer to", "Paid To:", "Seller:", or "Terminal name:".
-       - NEVER output bank or platform branding as the merchant (e.g., "ABA BANK", "ABA", "WING", "CANADIA", "BAKONG", "ACLEDA", "PAYWAY").
+    1. "merchant": Identify the full recipient, seller, store, or vendor name.
+       - Look for explicit labels FIRST: "Seller:", "Transfer to", "Paid To:", or "Terminal name:". If you see one of these, use its EXACT full value (e.g., if you see "Seller: HIDDEN 123 COFFEE", use "HIDDEN 123 COFFEE").
+       - DO NOT truncate or shorten the name. Always extract the entire string.
+       - Bank names and logos often appear at the very top or very bottom of the receipt (e.g., "ABA BANK", "ABA", "WING", "CANADIA", "BAKONG", "ACLEDA", "PAYWAY"). Ignore them completely and NEVER output them as the merchant.
        - NEVER use the "From account" name (that is the sender).
     2. "amount": Extract the exact transaction amount as a numeric float.
     3. "currency": Detect whether the currency is "USD" ($) or "KHR" (៛). Output "USD" or "KHR".
+    4. "bank_name": SCAN THE ENTIRE IMAGE (top header, bottom footer, logos, watermarks, background text, and reference labels) to identify the source/issuing bank or financial app.
+       - Common Cambodian banks/apps to detect: "ABA", "WING", "CANADIA", "ACLEDA", "BAKONG", "SATHAPANA", "PPCBANK", "CHIP MONG", "WOORI", "PRASAC", "PAYWAY".
+       - Return a short, uppercase identifier (e.g., "ABA", "WING", "ACLEDA", "CANADIA"). If none is found, return "".
 
     Output JSON ONLY:
     {
       "merchant": "STRING",
       "amount": NUMBER,
-      "currency": "STRING"
+      "currency": "STRING",
+      "bank_name": "STRING"
     }
     """
 
@@ -225,9 +231,10 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
         "properties": {
             "merchant": {"type": "STRING"},
             "amount": {"type": "NUMBER"},
-            "currency": {"type": "STRING"}
+            "currency": {"type": "STRING"},
+            "bank_name": {"type": "STRING"} # 🟢 Added to schema
         },
-        "required": ["merchant", "amount", "currency"]
+        "required": ["merchant", "amount", "currency", "bank_name"]
     }
 
     try:
@@ -236,8 +243,9 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
 
         amt = Decimal(str(round(parsed.amount, 2))) if parsed.amount else None
         merchant_name = parsed.merchant.strip().upper() if parsed.merchant else "UNKNOWN MERCHANT"
+        bank_name = getattr(parsed, 'bank_name', '').strip().upper()
 
-        # 🟢 Extra Python Guardrail: Reject bank names if model leaks them
+        # Extra Python Guardrail: Reject bank names if model leaks them
         FORBIDDEN_BANKS = ["ABA BANK", "ABA", "WING", "BAKONG", "CANADIA BANK", "ACLEDA BANK", "PAYWAY"]
         if any(bank in merchant_name for bank in FORBIDDEN_BANKS):
             merchant_name = "UNKNOWN MERCHANT"
@@ -248,10 +256,10 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
         else:
             currency = "USD"
 
-        return amt, merchant_name, currency
+        return amt, merchant_name, currency, bank_name
     except Exception as e:
         logger.error(f"Direct vision extraction error: {e}")
-        return None, "UNKNOWN MERCHANT", "USD"
+        return None, "UNKNOWN MERCHANT", "USD", ""
 
 
 # --- Unified Processor Function ---
@@ -265,11 +273,12 @@ def process_transaction_input(
     raw_name = "UNKNOWN MERCHANT"
     raw_account_num = None
     extracted_currency = "USD"
+    extracted_bank = ""
 
     # 🟢 Universal Direct Vision Extraction for Telegram Uploads
     if image_bytes:
-        amount, raw_name, extracted_currency = process_receipt_image_direct(image_bytes)
-        logger.info(f"📸 [Vision Extracted]: Merchant='{raw_name}', Amount={amount} {extracted_currency}")
+        amount, raw_name, extracted_currency, extracted_bank = process_receipt_image_direct(image_bytes)
+        logger.info(f"📸 [Vision Extracted]: Merchant='{raw_name}', Amount={amount} {extracted_currency}, Bank='{extracted_bank}'")
 
     # Fallback for plain text input (when no image is attached)
     if not image_bytes and raw_text:
@@ -355,14 +364,27 @@ def process_transaction_input(
             if db_acc:
                 matched_account_id = db_acc.id
 
-        # 🟢 NEW FIX: Try to match the exact bank/account name against the receipt merchant string
+        # 🟢 NEW FIX: Match account by extracted bank name (e.g., "ABA" matching "ABA USD")
+        if not matched_account_id and extracted_bank:
+            for acc in matching_accounts:
+                acc_name_clean = acc.account_name.lower()
+                bank_clean = extracted_bank.lower()
+                if bank_clean in acc_name_clean or acc_name_clean in bank_clean:
+                    matched_account_id = acc.id
+                    break
+
+        # Fallback: Try to match the exact bank/account name against the receipt merchant string
         if not matched_account_id:
             for acc in matching_accounts:
                 if acc.account_name.lower() in raw_name.lower() or raw_name.lower() in acc.account_name.lower():
                     matched_account_id = acc.id
                     break
 
-        # 🟢 UPDATED AMBIGUITY CHECK: If still no exact account match, return ALL accounts for inline selection
+        # SINGLE ACCOUNT AUTO-MATCH: If user has only 1 account for this currency, auto-select it!
+        if not matched_account_id and len(matching_accounts) == 1:
+            matched_account_id = matching_accounts[0].id
+
+        # UPDATED AMBIGUITY CHECK: If still no exact account match, return ALL accounts for inline selection
         if not matched_account_id:
             all_active_accounts = session.exec(
                 select(Account).where(Account.user_id == user_id, Account.is_active == True)
