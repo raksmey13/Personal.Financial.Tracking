@@ -364,27 +364,29 @@ def process_transaction_input(
             if db_acc:
                 matched_account_id = db_acc.id
 
-        # 🟢 NEW FIX: Match account by extracted bank name (e.g., "ABA" matching "ABA USD")
-        if not matched_account_id and extracted_bank:
-            for acc in matching_accounts:
-                acc_name_clean = acc.account_name.lower()
-                bank_clean = extracted_bank.lower()
-                if bank_clean in acc_name_clean or acc_name_clean in bank_clean:
-                    matched_account_id = acc.id
-                    break
-
-        # Fallback: Try to match the exact bank/account name against the receipt merchant string
+        # 🟢 STRICT WORD MATCH: Compare core account names against extracted bank or full receipt text
         if not matched_account_id:
+            full_search_text = f"{raw_name} {extracted_bank}".lower()
+
             for acc in matching_accounts:
-                if acc.account_name.lower() in raw_name.lower() or raw_name.lower() in acc.account_name.lower():
-                    matched_account_id = acc.id
-                    break
+                # Strip out common metadata/currency keywords to get the core identifier (e.g., "ABA USD" -> "aba")
+                clean_acc_name = (
+                    acc.account_name.lower()
+                    .replace("usd", "")
+                    .replace("khr", "")
+                    .replace("bank", "")
+                    .replace("account", "")
+                    .strip()
+                )
 
-        # SINGLE ACCOUNT AUTO-MATCH: If user has only 1 account for this currency, auto-select it!
-        if not matched_account_id and len(matching_accounts) == 1:
-            matched_account_id = matching_accounts[0].id
+                if clean_acc_name:
+                    # Check if core account name exists in receipt text or extracted bank brand
+                    if clean_acc_name in full_search_text or (
+                            extracted_bank and clean_acc_name in extracted_bank.lower()):
+                        matched_account_id = acc.id
+                        break
 
-        # UPDATED AMBIGUITY CHECK: If still no exact account match, return ALL accounts for inline selection
+        # 🟢 AMBIGUITY CHECK: If no account name matched the receipt text, force Inline Keyboard selection
         if not matched_account_id:
             all_active_accounts = session.exec(
                 select(Account).where(Account.user_id == user_id, Account.is_active == True)
