@@ -260,7 +260,7 @@ def process_transaction_input(
         raw_text: str = "",
         image_bytes: Optional[bytes] = None,
         source: str = "telegram"
-) -> dict:  # 🟢 Changed return type to dict to handle Telegram inline button responses
+) -> dict:
     amount = None
     raw_name = "UNKNOWN MERCHANT"
     raw_account_num = None
@@ -355,20 +355,33 @@ def process_transaction_input(
             if db_acc:
                 matched_account_id = db_acc.id
 
-        # 🟢 AMBIGUITY CHECK: Ask user via Telegram if multiple accounts exist and no exact match is found
-        if not matched_account_id and len(matching_accounts) > 1:
+        # 🟢 NEW FIX: Try to match the exact bank/account name against the receipt merchant string
+        if not matched_account_id:
+            for acc in matching_accounts:
+                if acc.account_name.lower() in raw_name.lower() or raw_name.lower() in acc.account_name.lower():
+                    matched_account_id = acc.id
+                    break
+
+        # 🟢 UPDATED AMBIGUITY CHECK: If still no exact account match, return ALL accounts for inline selection
+        if not matched_account_id:
+            all_active_accounts = session.exec(
+                select(Account).where(Account.user_id == user_id, Account.is_active == True)
+            ).all()
+
             return {
                 "status": "needs_account_selection",
-                "amount": amount,
+                "amount": float(amount),
                 "merchant": raw_name,
                 "currency": extracted_currency,
                 "symbol": symbol,
-                "accounts": [{"id": acc.id, "name": acc.account_name, "balance": float(acc.balance)} for acc in
-                             matching_accounts]
+                "accounts": [
+                    {"id": acc.id, "name": acc.account_name, "currency": acc.currency, "balance": float(acc.balance)}
+                    for acc in all_active_accounts
+                ]
             }
 
         # Single account or exact match found -> proceed normally
-        chosen_acc_id = matched_account_id or matching_accounts[0].id
+        chosen_acc_id = matched_account_id
 
         mapping = session.exec(
             select(BeneficiaryCategoryMap).where(

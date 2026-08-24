@@ -1,10 +1,12 @@
 import re
 import logging
 from typing import Optional
+from decimal import Decimal
+from datetime import date
 from sqlmodel import Session, select
 
 from database import engine
-from models import User
+from models import User, PendingTransaction, Account
 from .ai_engine import (
     process_transaction_input,
     extract_text_from_image_bytes,
@@ -85,3 +87,47 @@ def process_incoming_telegram_message(
         image_bytes=None,
         source="telegram"
     )
+
+# 🟢 NEW: Handles the button tap when a user selects an account from the Telegram Inline Keyboard
+def handle_telegram_callback(user_id: int, callback_data: str) -> dict:
+    """
+    Processes inline keyboard taps from Telegram.
+    Expected callback_data format: 'sel_acc:<account_id>:<amount>:<currency>:<merchant>'
+    """
+    try:
+        parts = callback_data.split(":")
+        if parts[0] != "sel_acc":
+            return {"status": "error", "message": "Unknown callback action."}
+
+        account_id = int(parts[1])
+        amount = float(parts[2])
+        currency = parts[3]
+        # Rejoin merchant name in case it contained colons
+        merchant = ":".join(parts[4:])
+
+        symbol = "៛" if currency == "KHR" else "$"
+
+        with Session(engine) as session:
+            # Create the Pending Transaction under the manually chosen account
+            pending = PendingTransaction(
+                user_id=user_id,
+                raw_beneficiary_name=merchant,
+                amount=Decimal(str(amount)),
+                transaction_date=date.today(),
+                account_id=account_id,
+                source="telegram",
+                status="pending",
+            )
+            session.add(pending)
+            session.commit()
+
+            acc_obj = session.get(Account, account_id)
+            acc_name = acc_obj.account_name if acc_obj else "Selected Account"
+
+        return {
+            "status": "success",
+            "message": f"📥 Staged **{symbol}{amount:.2f}** for **'{merchant}'** under account **{acc_name}** in Pending Inbox!"
+        }
+    except Exception as e:
+        logger.error(f"Error handling telegram callback: {e}")
+        return {"status": "error", "message": "⚠️ Failed to process account selection."}
