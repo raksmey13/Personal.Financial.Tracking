@@ -11,14 +11,17 @@ from sqlalchemy.exc import SQLAlchemyError
 from pydantic import ValidationError
 from dotenv import load_dotenv
 from sqlmodel import Session, select
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, ContextTypes, MessageHandler,
+    CommandHandler, CallbackQueryHandler, filters
+)
 from database import engine, create_db_and_tables
 from models import User, Account
 from service.init_db import init_superadmin_and_defaults
-from routes.telegram_service import process_incoming_telegram_message
+from routes.telegram_service import process_incoming_telegram_message, handle_telegram_callback
 from routes.ai_engine import extract_text_from_image_bytes
-from database import get_session  # or relative: from ..database import get_session
+from database import get_session
 import resend
 
 from routes import (
@@ -102,19 +105,17 @@ async def handle_telegram_receipt(update: Update, context: ContextTypes.DEFAULT_
         elif update.message.caption:
             raw_text = update.message.caption
 
-    # 2. Extract Photo Bytes if user uploaded a image
+    # 2. Extract Photo Bytes if user uploaded an image
     if update.message and update.message.photo:
         processing_msg = await update.message.reply_text("⏳ Processing image receipt with AI...")
         try:
             photo_file = await update.message.photo[-1].get_file()
-            # Convert bytearray to bytes
             image_bytes = bytes(await photo_file.download_as_bytearray())
         except Exception as e:
             logger.error(f"Error downloading photo from Telegram: {e}")
         finally:
             await processing_msg.delete()
 
-    # Must have either text or image_bytes to proceed
     if raw_text or image_bytes:
         with Session(engine) as session:
             db_user = session.exec(
@@ -130,15 +131,67 @@ async def handle_telegram_receipt(update: Update, context: ContextTypes.DEFAULT_
 
             actual_user_id = db_user.id
 
-        # 🟢 Pass BOTH raw_text AND image_bytes to process_incoming_telegram_message
-        reply_msg = process_incoming_telegram_message(
+        res = process_incoming_telegram_message(
             raw_text=raw_text,
             user_id=actual_user_id,
             image_bytes=image_bytes
         )
-        await update.message.reply_text(reply_msg)
+
+        # 🟢 Render Inline Keyboard Buttons when account selection is ambiguous
+        if isinstance(res, dict) and res.get("status") == "needs_account_selection":
+            amount = res["amount"]
+            symbol = res["symbol"]
+            merchant = res["merchant"]
+            currency = res["currency"]
+            accounts = res["accounts"]
+
+            keyboard = []
+            for acc in accounts:
+                btn_text = f"🏦 {acc['name']} ({acc['currency']}) — {symbol}{acc['balance']:,.2f}"
+                callback_data = f"sel_acc:{acc['id']}:{amount}:{currency}:{merchant[:15]}"
+                keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback_data)])
+
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_text(
+                f"🧾 *Receipt Scanned!*\n\n"
+                f"• *Merchant:* `{merchant}`\n"
+                f"• *Amount:* `{symbol}{amount:.2f} {currency}`\n\n"
+                f"❓ *Please select the account to log this under:*",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+        else:
+            msg_text = res.get("message", "Processing completed.") if isinstance(res, dict) else str(res)
+            await update.message.reply_text(msg_text)
     else:
         await update.message.reply_text("⚠️ Could not read message or receipt image. Please try again.")
+
+
+# 🟢 Handler for inline button taps
+async def handle_telegram_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    tg_user_id = update.effective_user.id
+    with Session(engine) as session:
+        db_user = session.exec(
+            select(User).where(User.telegram_id == tg_user_id)
+        ).first()
+
+        if not db_user:
+            await query.edit_message_text("⚠️ User account link not found.")
+            return
+
+        actual_user_id = db_user.id
+
+    res = handle_telegram_callback(
+        user_id=actual_user_id,
+        callback_data=query.data
+    )
+
+    msg = res.get("message", "Processed successfully!")
+    await query.edit_message_text(msg, parse_mode="Markdown")
 
 
 @asynccontextmanager
@@ -151,8 +204,9 @@ async def lifespan(app: FastAPI):
         tg_app = ApplicationBuilder().token(BOT_TOKEN).build()
         tg_app.add_handler(CommandHandler("start", handle_start_command))
         tg_app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), handle_telegram_receipt))
+        # 🟢 Register callback handler for inline keyboard button presses
+        tg_app.add_handler(CallbackQueryHandler(handle_telegram_callback_query))
 
-        # 🟢 Explicit initialization sequence for webhooks
         await tg_app.initialize()
         await tg_app.start()
         logger.info("🤖 Telegram Bot initialized and ready for webhooks!")
@@ -168,11 +222,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title="Personal Finance Tracker API")
 
-# Global reference for webhook handling
 tg_app = None
 
 
-# --- NEW: Webhook Endpoint for Telegram ---
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     if not tg_app:
