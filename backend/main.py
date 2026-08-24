@@ -147,8 +147,15 @@ async def handle_telegram_receipt(update: Update, context: ContextTypes.DEFAULT_
 
             keyboard = []
             for acc in accounts:
-                btn_text = f"🏦 {acc['name']} ({acc['currency']}) — {symbol}{acc['balance']:,.2f}"
-                callback_data = f"sel_acc:{acc['id']}:{amount}:{currency}:{merchant[:15]}"
+                acc_symbol = "៛" if acc['currency'] == "KHR" else "$"
+                btn_text = f"🏦 {acc['name']} ({acc['currency']}) — {acc_symbol}{acc['balance']:,.2f}"
+
+                base_payload = f"sel_acc:{acc['id']}:{amount}:{currency}:"
+                remaining_bytes = 64 - len(base_payload.encode('utf-8'))
+                safe_merchant_bytes = merchant.encode('utf-8')[:remaining_bytes]
+                safe_merchant = safe_merchant_bytes.decode('utf-8', 'ignore')
+
+                callback_data = f"{base_payload}{safe_merchant}"
                 keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback_data)])
 
             reply_markup = InlineKeyboardMarkup(keyboard)
