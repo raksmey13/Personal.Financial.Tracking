@@ -197,24 +197,23 @@ def parse_khqr_receipt(text: str):
     return amount, raw_name, raw_account_num
 
 
-# 🟢 UPDATED: Direct Vision Function with Original Amount Priority & Strict Sender Bank Filtering
+# 🟢 Direct Vision Function: Strict Top Header Amount & Sender Bank Extraction
 def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal], str, str, str]:
     """
-    Passes image bytes directly to Gemini Vision to extract exact amount, merchant name, currency, and issuing bank.
+    Passes image bytes directly to Gemini Vision to extract top header amount, merchant name, currency, and issuing bank.
     """
     prompt = """
     Analyze this payment receipt or bank transfer screenshot visually.
 
     CRITICAL EXTRACTION RULES:
-    1. "amount" & "currency":
-       - Look for an "Original amount:" label FIRST. If present, extract its numeric value and currency symbol (e.g., if you see "Original amount: 2,000.00 KHR", output amount=2000 and currency="KHR").
-       - If NO "Original amount:" label is present, extract the top header transaction amount and currency.
-    2. "merchant": Identify the recipient, seller, store, or vendor name.
-       - Look for explicit labels FIRST: "Seller:", "Transfer to", "Paid To:", or "Terminal name:". If present, extract the EXACT full value without shortening.
-       - NEVER output bank or platform branding as the merchant.
+    1. "amount" & "currency": Extract ONLY the main top header transaction amount and currency symbol.
+       - Focus strictly on the large, prominent amount displayed at the top of the receipt header (e.g., "-0.50 USD" -> amount: 0.50, currency: "USD").
+       - IGNORE any lower detail rows like "Original amount:", "Exchange rate:", or "Converted amount:".
+    2. "merchant": Identify the recipient, seller, store, or vendor name from "Seller:", "Paid To:", "Transfer to", or header title.
+       - NEVER use bank branding as the merchant name.
        - NEVER use the "From account" name (sender name).
-    3. "bank_name": SCAN THE IMAGE (top header or bottom footer logos) to identify ONLY the ISSUING/SENDER bank (e.g. "ABA", "WING", "CANADIA", "ACLEDA", "BAKONG").
-       - CRITICAL GUARDRAIL: IGNORE any line labeled "Bank:" inside transaction details (e.g., ignore "Bank: ACLEDA Bank Plc."). That is the recipient's bank, NOT the sending bank.
+    3. "bank_name": SCAN THE TOP HEADER OR BOTTOM FOOTER for the ISSUING/SENDER bank app logo (e.g., "ABA", "WING", "CANADIA", "ACLEDA", "BAKONG").
+       - IGNORE any line labeled "Bank:" inside transaction details (e.g., ignore "Bank: ACLEDA Bank Plc."). That is the recipient's bank, NOT the sending bank.
 
     Output JSON ONLY:
     {
