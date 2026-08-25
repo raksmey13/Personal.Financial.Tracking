@@ -18,7 +18,7 @@ from google.genai import types
 from database import SessionDep, engine
 from models import (
     Category, User, Account, Budget, Transaction,
-    PendingTransaction, BeneficiaryCategoryMap, Notification
+    PendingTransaction, BeneficiaryCategoryMap, Notification ,UserSettings
 )
 from .auth import get_current_user
 from .notification import check_and_trigger_notifications
@@ -580,38 +580,77 @@ def handle_ui_chat_assistant(
     try:
         today_str = date.today().strftime("%Y-%m-%d (%A)")
 
-        categories = session.exec(
-            select(Category).where((Category.user_id == current_user.id) | (Category.user_id == None))
-        ).all()
-        accounts = session.exec(
+        # 🟢 1. FETCH FULL DATABASE CONTEXT FOR CURRENT USER
+        # Accounts (Balances, Currencies, Credit Limits)
+        user_accounts = session.exec(
             select(Account).where(Account.user_id == current_user.id, Account.is_active == True)
         ).all()
+        acc_summary = [
+            f"{a.account_name} ({a.currency}) [{a.account_type}]: Balance = {a.balance:,.2f}"
+            for a in user_accounts
+        ] if user_accounts else ["None"]
 
-        acc_summary = [f"{a.account_name} ({a.currency}): ${a.balance:.2f}" for a in accounts] if accounts else []
-        cat_names = [c.name for c in categories] if categories else []
+        # Categories
+        user_categories = session.exec(
+            select(Category).where((Category.user_id == current_user.id) | (Category.user_id == None))
+        ).all()
+        cat_summary = [f"{c.name} ({c.type})" for c in user_categories] if user_categories else ["General"]
 
+        # Budgets
+        user_budgets = session.exec(
+            select(Budget).where(Budget.user_id == current_user.id, Budget.is_active == True)
+        ).all()
+        budget_summary = [f"{b.name or 'Budget'}: Limit = ${b.monthly_limit:,.2f}" for b in user_budgets] if user_budgets else ["None"]
+
+        # Pending Transactions Inbox Count
+        pending_count = len(session.exec(
+            select(PendingTransaction).where(PendingTransaction.user_id == current_user.id, PendingTransaction.status == "pending")
+        ).all())
+
+        # Unread Notifications Count
+        unread_notifications = len(session.exec(
+            select(Notification).where(Notification.user_id == current_user.id, Notification.is_read == False)
+        ).all())
+
+        # User Settings
+        settings = session.exec(
+            select(UserSettings).where(UserSettings.user_id == current_user.id)
+        ).first()
+        pref_lang = settings.language if settings else "en"
+
+        # 🟢 2. SYSTEM INSTRUCTION WITH SCHEMA AWARENESS
         system_instruction = f"""
-        You are the AI Personal Finance Assistant for Surveyor Pro.
+        You are the intelligent AI Personal Finance Assistant for Surveyor Pro.
         User Email: {current_user.email}
         Today's Date: {today_str}
+        Preferred Language: {pref_lang}
 
-        LIVE USER FINANCIAL SNAPSHOT:
-        - Connected Accounts & Balances: {acc_summary if acc_summary else "None"}
-        - Available Categories: {cat_names if cat_names else "None"}
+        LIVE USER FINANCIAL SNAPSHOT (DATABASE REAL-TIME DATA):
+        - Active Accounts: {", ".join(acc_summary)}
+        - Configured Categories: {", ".join(cat_summary[:15])}
+        - Active Budgets: {", ".join(budget_summary)}
+        - Unconfirmed Items in Pending Inbox: {pending_count}
+        - Unread Alerts / Notifications: {unread_notifications}
 
-        CRITICAL ROUTING INSTRUCTIONS:
-        1. When user asks to see past or recent transactions, output JSON: {{"tool": "get_recent_transactions_tool", "limit": 5}}
-        2. When user asks how much they spent in a timeframe or category, output JSON: {{"tool": "get_spending_summary_tool", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "category_name": "..."}}
-        3. When user asks about budget status or limits, output JSON: {{"tool": "get_budget_status_tool"}}
-        4. When user mentions spending, earning, or logging money, output JSON: {{"tool": "create_transaction_tool", "amount": 0.0, "category_name": "...", "account_name": "...", "transaction_type": "expense"}}
-        5. For standard questions or balance queries, respond directly as normal text.
+        INSTRUCTIONS & TOOL ROUTING:
+        1. Answer questions concisely and professionally based on the live snapshot above.
+        2. When asked to look up recent transactions, output JSON ONLY:
+           {{"tool": "get_recent_transactions_tool", "limit": 5}}
+        3. When asked how much spent/earned in a date range or category, output JSON ONLY:
+           {{"tool": "get_spending_summary_tool", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "category_name": "..."}}
+        4. When asked about pending inbox items, output JSON ONLY:
+           {{"tool": "get_pending_inbox_tool"}}
+        5. When asked to log a new expense or income manually, output JSON ONLY:
+           {{"tool": "create_transaction_tool", "amount": 0.0, "category_name": "...", "account_name": "...", "transaction_type": "expense"}}
         """
 
+        # 🟢 3. EXECUTE GEMINI VISION / CHAT CALL
         response_text = call_gemini_sdk(
             prompt=payload.message,
             system_instruction=system_instruction
         )
 
+        # 🟢 4. PROCESS TOOL CALL RESPONSES DYNAMICALLY
         if "{" in response_text and "tool" in response_text:
             try:
                 import json
@@ -619,8 +658,9 @@ def handle_ui_chat_assistant(
                 tool_payload = json.loads(clean_json)
                 call_name = tool_payload.get("tool", "")
 
+                # Tool A: Fetch Recent Transactions
                 if call_name == "get_recent_transactions_tool":
-                    query_limit = min(int(tool_payload.get("limit", 5)), 20)
+                    query_limit = min(int(tool_payload.get("limit", 5)), 15)
                     recent_txs = session.exec(
                         select(Transaction)
                         .where(Transaction.user_id == current_user.id)
@@ -629,14 +669,17 @@ def handle_ui_chat_assistant(
                     ).all()
 
                     if not recent_txs:
-                        return ChatResponse(reply="📜 You don't have any logged transactions yet.")
+                        return ChatResponse(reply="📜 You don't have any logged transactions in your database yet.")
 
-                    formatted_lines = [
-                        f"• **{tx.transaction_date}**: {'+' if tx.type == 'income' else '-'}${abs(tx.amount):.2f} (*{tx.type.capitalize()}*) — {tx.description or 'No desc'}"
-                        for tx in recent_txs
-                    ]
-                    return ChatResponse(reply="📜 **Recent Transactions:**\n\n" + "\n".join(formatted_lines))
+                    lines = []
+                    for tx in recent_txs:
+                        acc = session.get(Account, tx.account_id)
+                        symbol = "៛" if acc and acc.currency == "KHR" else "$"
+                        lines.append(f"• **{tx.transaction_date}**: {'+' if tx.type == 'income' else '-'}{symbol}{abs(tx.amount):,.2f} (*{tx.description}*)")
 
+                    return ChatResponse(reply="📜 **Recent Database Transactions:**\n\n" + "\n".join(lines))
+
+                # Tool B: Spending Summary
                 elif call_name == "get_spending_summary_tool":
                     start_str = tool_payload.get("start_date") or date.today().replace(day=1).strftime("%Y-%m-%d")
                     end_str = tool_payload.get("end_date") or date.today().strftime("%Y-%m-%d")
@@ -650,11 +693,8 @@ def handle_ui_chat_assistant(
                     )
 
                     matched_cat = None
-                    if cat_name_arg and categories:
-                        for c in categories:
-                            if cat_name_arg.lower() in c.name.lower():
-                                matched_cat = c
-                                break
+                    if cat_name_arg and user_categories:
+                        matched_cat = next((c for c in user_categories if cat_name_arg.lower() in c.name.lower()), None)
                         if matched_cat:
                             query = query.where(Transaction.category_id == matched_cat.id)
 
@@ -663,28 +703,28 @@ def handle_ui_chat_assistant(
 
                     if matched_cat:
                         return ChatResponse(
-                            reply=f"📊 Total spent on **'{matched_cat.name}'** ({start_str} to {end_str}): **${total_spent:.2f}** ({len(txs)} txs)."
+                            reply=f"📊 Total spent on **'{matched_cat.name}'** ({start_str} to {end_str}): **${total_spent:,.2f}** ({len(txs)} transactions)."
                         )
                     return ChatResponse(
-                        reply=f"📊 Total expenses ({start_str} to {end_str}): **${total_spent:.2f}** ({len(txs)} txs)."
+                        reply=f"📊 Total expenses ({start_str} to {end_str}): **${total_spent:,.2f}** across {len(txs)} transactions."
                     )
 
-                elif call_name == "get_budget_status_tool":
-                    user_budgets = session.exec(
-                        select(Budget).where(Budget.user_id == current_user.id)
+                # Tool C: Pending Inbox Items
+                elif call_name == "get_pending_inbox_tool":
+                    pending_items = session.exec(
+                        select(PendingTransaction).where(
+                            PendingTransaction.user_id == current_user.id,
+                            PendingTransaction.status == "pending"
+                        )
                     ).all()
 
-                    if not user_budgets:
-                        return ChatResponse(reply="🎯 You don't have any active budgets set up yet.")
+                    if not pending_items:
+                        return ChatResponse(reply="📥 Your Pending Inbox is completely clear! No staged receipts waiting.")
 
-                    budget_lines = []
-                    for b in user_budgets:
-                        cat = session.get(Category, b.category_id) if getattr(b, 'category_id', None) else None
-                        cat_title = cat.name if cat else "General"
-                        budget_lines.append(f"• **{cat_title}**: ${b.monthly_limit:.2f} limit")
+                    lines = [f"• **{pt.raw_beneficiary_name}**: ${pt.amount:,.2f} (Received: {pt.created_at.strftime('%b %d')})" for pt in pending_items]
+                    return ChatResponse(reply=f"📥 **Pending Inbox ({len(pending_items)} items staged):**\n\n" + "\n".join(lines))
 
-                    return ChatResponse(reply="🎯 **Your Active Budgets:**\n\n" + "\n".join(budget_lines))
-
+                # Tool D: Create Manual Transaction
                 elif call_name == "create_transaction_tool":
                     amount_val = float(tool_payload.get("amount", 0.0))
                     cat_name_arg = str(tool_payload.get("category_name", "")).strip()
@@ -692,22 +732,21 @@ def handle_ui_chat_assistant(
                     tx_type_arg = str(tool_payload.get("transaction_type", "expense")).lower()
 
                     if amount_val > 0:
-                        matched_cat = next((c for c in categories if cat_name_arg.lower() in c.name.lower()),
-                                           None) if categories else None
-                        matched_acc = next((a for a in accounts if acc_name_arg.lower() in a.account_name.lower()),
-                                           accounts[0]) if accounts else None
+                        matched_cat = next((c for c in user_categories if cat_name_arg.lower() in c.name.lower()), None)
+                        matched_acc = next((a for a in user_accounts if acc_name_arg.lower() in a.account_name.lower()), user_accounts[0] if user_accounts else None)
 
                         if matched_acc:
                             new_tx = Transaction(
                                 user_id=current_user.id,
                                 account_id=matched_acc.id,
-                                category_id=matched_cat.id if matched_cat else None,
+                                category_id=matched_cat.id if matched_cat else user_categories[0].id,
                                 amount=Decimal(str(amount_val)),
                                 type=tx_type_arg,
-                                description=f"Logged via AI ({cat_name_arg or 'General'})",
+                                description=f"Logged via Web AI Assistant ({cat_name_arg or 'General'})",
                                 transaction_date=date.today(),
                             )
 
+                            symbol = "៛" if matched_acc.currency == "KHR" else "$"
                             if tx_type_arg == "expense":
                                 matched_acc.balance -= Decimal(str(amount_val))
                             else:
@@ -717,17 +756,8 @@ def handle_ui_chat_assistant(
                             session.add(matched_acc)
                             session.commit()
 
-                            if matched_cat:
-                                check_and_trigger_notifications(
-                                    user_id=current_user.id,
-                                    account_id=matched_acc.id,
-                                    category_id=matched_cat.id,
-                                    session=session,
-                                    tx_date=date.today()
-                                )
-
                             return ChatResponse(
-                                reply=f"✅ **Logged**: **${amount_val:.2f}** under **'{matched_cat.name if matched_cat else 'General'}'** using **{matched_acc.account_name}**."
+                                reply=f"✅ **Logged Transaction**: **{symbol}{amount_val:,.2f}** under **'{matched_cat.name if matched_cat else 'General'}'** into account **{matched_acc.account_name}**."
                             )
             except Exception as parse_err:
                 logger.warning(f"Tool execution JSON parse failed, returning raw response: {parse_err}")
@@ -737,4 +767,4 @@ def handle_ui_chat_assistant(
     except Exception as e:
         session.rollback()
         logger.error(f"Chat assistant error: {e}")
-        return ChatResponse(reply=f"⚠️ Couldn't complete request: {str(e)}")
+        return ChatResponse(reply=f"⚠️ Couldn't complete AI request: {str(e)}")
