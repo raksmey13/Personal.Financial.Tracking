@@ -62,7 +62,7 @@ class GeminiParsedTransaction(BaseModel):
     amount: float
     currency: str = "USD"
     category: str = "Uncategorized"
-    bank_name: str = "" # 🟢 ADDED bank_name to schema
+    bank_name: str = ""
 
 
 class ChatRequest(BaseModel):
@@ -197,7 +197,7 @@ def parse_khqr_receipt(text: str):
     return amount, raw_name, raw_account_num
 
 
-# 🟢 UPDATED: Direct Vision Function with Exact Currency Detection and Bank Guardrails
+# 🟢 UPDATED: Direct Vision Function with Original Amount Priority & Strict Sender Bank Filtering
 def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal], str, str, str]:
     """
     Passes image bytes directly to Gemini Vision to extract exact amount, merchant name, currency, and issuing bank.
@@ -206,16 +206,15 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
     Analyze this payment receipt or bank transfer screenshot visually.
 
     CRITICAL EXTRACTION RULES:
-    1. "merchant": Identify the full recipient, seller, store, or vendor name.
-       - Look for explicit labels FIRST: "Seller:", "Transfer to", "Paid To:", or "Terminal name:". If you see one of these, use its EXACT full value (e.g., if you see "Seller: HIDDEN 123 COFFEE", use "HIDDEN 123 COFFEE").
-       - DO NOT truncate or shorten the name. Always extract the entire string.
-       - Bank names and logos often appear at the very top or very bottom of the receipt (e.g., "ABA BANK", "ABA", "WING", "CANADIA", "BAKONG", "ACLEDA", "PAYWAY"). Ignore them completely and NEVER output them as the merchant.
-       - NEVER use the "From account" name (that is the sender).
-    2. "amount": Extract the exact transaction amount as a numeric float.
-    3. "currency": Detect whether the currency is "USD" ($) or "KHR" (៛). Output "USD" or "KHR".
-    4. "bank_name": SCAN THE ENTIRE IMAGE (top header, bottom footer, logos, watermarks, background text, and reference labels) to identify the source/issuing bank or financial app.
-       - Common Cambodian banks/apps to detect: "ABA", "WING", "CANADIA", "ACLEDA", "BAKONG", "SATHAPANA", "PPCBANK", "CHIP MONG", "WOORI", "PRASAC", "PAYWAY".
-       - Return a short, uppercase identifier (e.g., "ABA", "WING", "ACLEDA", "CANADIA"). If none is found, return "".
+    1. "amount" & "currency":
+       - Look for an "Original amount:" label FIRST. If present, extract its numeric value and currency symbol (e.g., if you see "Original amount: 2,000.00 KHR", output amount=2000 and currency="KHR").
+       - If NO "Original amount:" label is present, extract the top header transaction amount and currency.
+    2. "merchant": Identify the recipient, seller, store, or vendor name.
+       - Look for explicit labels FIRST: "Seller:", "Transfer to", "Paid To:", or "Terminal name:". If present, extract the EXACT full value without shortening.
+       - NEVER output bank or platform branding as the merchant.
+       - NEVER use the "From account" name (sender name).
+    3. "bank_name": SCAN THE IMAGE (top header or bottom footer logos) to identify ONLY the ISSUING/SENDER bank (e.g. "ABA", "WING", "CANADIA", "ACLEDA", "BAKONG").
+       - CRITICAL GUARDRAIL: IGNORE any line labeled "Bank:" inside transaction details (e.g., ignore "Bank: ACLEDA Bank Plc."). That is the recipient's bank, NOT the sending bank.
 
     Output JSON ONLY:
     {
@@ -232,7 +231,7 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
             "merchant": {"type": "STRING"},
             "amount": {"type": "NUMBER"},
             "currency": {"type": "STRING"},
-            "bank_name": {"type": "STRING"} # 🟢 Added to schema
+            "bank_name": {"type": "STRING"}
         },
         "required": ["merchant", "amount", "currency", "bank_name"]
     }
@@ -245,7 +244,6 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
         merchant_name = parsed.merchant.strip().upper() if parsed.merchant else "UNKNOWN MERCHANT"
         bank_name = getattr(parsed, 'bank_name', '').strip().upper()
 
-        # Extra Python Guardrail: Reject bank names if model leaks them
         FORBIDDEN_BANKS = ["ABA BANK", "ABA", "WING", "BAKONG", "CANADIA BANK", "ACLEDA BANK", "PAYWAY"]
         if any(bank in merchant_name for bank in FORBIDDEN_BANKS):
             merchant_name = "UNKNOWN MERCHANT"
@@ -275,12 +273,10 @@ def process_transaction_input(
     extracted_currency = "USD"
     extracted_bank = ""
 
-    # 🟢 Universal Direct Vision Extraction for Telegram Uploads
     if image_bytes:
         amount, raw_name, extracted_currency, extracted_bank = process_receipt_image_direct(image_bytes)
         logger.info(f"📸 [Vision Extracted]: Merchant='{raw_name}', Amount={amount} {extracted_currency}, Bank='{extracted_bank}'")
 
-    # Fallback for plain text input (when no image is attached)
     if not image_bytes and raw_text:
         is_receipt = any(
             k in raw_text.lower() for k in ["transfer to", "paid to", "from account", "trx id", "bakong", "transfer"]
@@ -335,11 +331,10 @@ def process_transaction_input(
         return {"status": "error",
                 "message": "⚠️ Could not parse transaction amount. Please specify like: 'Spent $5.50 on Coffee'."}
 
-    # Set currency formatting symbol for responses
     symbol = "៛" if extracted_currency == "KHR" else "$"
 
     with Session(engine) as session:
-        # Match user's account by extracted currency
+        # Match active accounts by currency
         matching_accounts = session.exec(
             select(Account).where(
                 Account.user_id == user_id,
@@ -349,7 +344,6 @@ def process_transaction_input(
         ).all()
 
         if not matching_accounts:
-            # Fallback to all active accounts if no exact currency match exists
             matching_accounts = session.exec(
                 select(Account).where(Account.user_id == user_id, Account.is_active == True)
             ).all()
@@ -357,19 +351,18 @@ def process_transaction_input(
         if not matching_accounts:
             return {"status": "error", "message": "⚠️ No active financial accounts found."}
 
-        # Check for exact account number match
         matched_account_id = None
         if raw_account_num:
             db_acc = next((acc for acc in matching_accounts if raw_account_num in acc.account_name), None)
             if db_acc:
                 matched_account_id = db_acc.id
 
-        # 🟢 STRICT WORD MATCH: Compare core account names against extracted bank or full receipt text
+        # 🟢 WORD MATCH WITH TYPE PRIORITIZATION & CONTAINMENT CHECK
         if not matched_account_id:
             full_search_text = f"{raw_name} {extracted_bank}".lower()
+            potential_matches = []
 
             for acc in matching_accounts:
-                # Strip out common metadata/currency keywords to get the core identifier (e.g., "ABA USD" -> "aba")
                 clean_acc_name = (
                     acc.account_name.lower()
                     .replace("usd", "")
@@ -379,14 +372,23 @@ def process_transaction_input(
                     .strip()
                 )
 
-                if clean_acc_name:
-                    # Check if core account name exists in receipt text or extracted bank brand
-                    if clean_acc_name in full_search_text or (
-                            extracted_bank and clean_acc_name in extracted_bank.lower()):
-                        matched_account_id = acc.id
-                        break
+                if clean_acc_name and (clean_acc_name in full_search_text or (extracted_bank and clean_acc_name in extracted_bank.lower())):
+                    potential_matches.append(acc)
 
-        # 🟢 AMBIGUITY CHECK: If no account name matched the receipt text, force Inline Keyboard selection
+            if len(potential_matches) == 1:
+                matched_account_id = potential_matches[0].id
+            elif len(potential_matches) > 1:
+                is_credit_receipt = any(k in full_search_text for k in ["credit", "card", "mastercard", "visa"])
+                if is_credit_receipt:
+                    credit_acc = next((a for a in potential_matches if getattr(a, "account_type", "").lower() in ["credit", "credit card"]), None)
+                    if credit_acc:
+                        matched_account_id = credit_acc.id
+                else:
+                    normal_acc = next((a for a in potential_matches if getattr(a, "account_type", "").lower() == "normal"), None)
+                    if normal_acc:
+                        matched_account_id = normal_acc.id
+
+        # 🟢 AMBIGUITY CHECK: Force Inline Keyboard if no string containment match succeeded
         if not matched_account_id:
             all_active_accounts = session.exec(
                 select(Account).where(Account.user_id == user_id, Account.is_active == True)
@@ -404,7 +406,6 @@ def process_transaction_input(
                 ]
             }
 
-        # Single account or exact match found -> proceed normally
         chosen_acc_id = matched_account_id
 
         mapping = session.exec(
@@ -414,8 +415,19 @@ def process_transaction_input(
             )
         ).first()
 
+        clean_amount = abs(amount)
+        acc_obj = session.get(Account, chosen_acc_id)
+
+        # 🟢 Overdraft Warning Builder
+        balance_warning = ""
+        if acc_obj:
+            acc_obj.balance -= clean_amount
+            session.add(acc_obj)
+            if acc_obj.balance < 0:
+                acc_symbol = "៛" if acc_obj.currency == "KHR" else "$"
+                balance_warning = f"\n⚠️ *Warning:* **{acc_obj.account_name}** balance is now negative ({acc_symbol}{acc_obj.balance:,.2f})!"
+
         if mapping:
-            clean_amount = abs(amount)
             new_tx = Transaction(
                 user_id=user_id,
                 amount=clean_amount,
@@ -426,12 +438,6 @@ def process_transaction_input(
                 type="expense",
             )
             session.add(new_tx)
-
-            acc_obj = session.get(Account, chosen_acc_id)
-            if acc_obj:
-                acc_obj.balance -= clean_amount
-                session.add(acc_obj)
-
             session.commit()
 
             check_and_trigger_notifications(
@@ -443,13 +449,13 @@ def process_transaction_input(
             )
 
             return {"status": "success",
-                    "message": f"✅ Auto-categorized {symbol}{clean_amount:.2f} under Category #{mapping.category_id} ({raw_name})."}
+                    "message": f"✅ Auto-categorized {symbol}{clean_amount:,.2f} under Category #{mapping.category_id} ({raw_name}).{balance_warning}"}
 
         else:
             pending = PendingTransaction(
                 user_id=user_id,
                 raw_beneficiary_name=raw_name,
-                amount=amount,
+                amount=clean_amount,
                 transaction_date=date.today(),
                 account_id=chosen_acc_id,
                 source=source,
@@ -462,7 +468,7 @@ def process_transaction_input(
             session.add(Notification(
                 user_id=user_id,
                 title="📥 Action Required: Uncategorized Transaction",
-                message=f"New transaction of {symbol}{amount:.2f} from '{raw_name}' needs a category in your Pending Inbox.",
+                message=f"New transaction of {symbol}{clean_amount:,.2f} from '{raw_name}' needs a category in your Pending Inbox.",
                 notification_type="warning",
                 is_read=False,
                 created_at=datetime.utcnow(),
@@ -473,7 +479,7 @@ def process_transaction_input(
             ))
             session.commit()
 
-            return {"status": "success", "message": f"📥 Staged {symbol}{amount:.2f} for '{raw_name}' in Pending Inbox!"}
+            return {"status": "success", "message": f"📥 Staged {symbol}{clean_amount:,.2f} for '{raw_name}' under account {acc_obj.account_name if acc_obj else ''} in Pending Inbox!{balance_warning}"}
 
 
 # --- REST API Endpoints ---
