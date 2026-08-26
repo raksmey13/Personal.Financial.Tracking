@@ -18,7 +18,7 @@ from google.genai import types
 from database import SessionDep, engine
 from models import (
     Category, User, Account, Budget, Transaction,
-    PendingTransaction, BeneficiaryCategoryMap, Notification ,UserSettings
+    PendingTransaction, BeneficiaryCategoryMap, Notification, UserSettings, AIProcessingLog
 )
 from .auth import get_current_user
 from .notification import check_and_trigger_notifications
@@ -566,8 +566,59 @@ async def scan_receipt_image(
 
     try:
         resp_text = call_gemini_sdk(prompt=prompt, image_bytes=image_bytes, json_schema=json_schema)
-        return ParsedTransactionResult.model_validate_json(resp_text)
+        parsed = ParsedTransactionResult.model_validate_json(resp_text)
+
+        # 🟢 1. MATCH OR FALLBACK ACCOUNT
+        user_accounts = session.exec(
+            select(Account).where(Account.user_id == current_user.id, Account.is_active == True)
+        ).all()
+
+        matched_acc = None
+        if user_accounts:
+            # Try to match extracted currency or bank name in account title
+            matched_acc = next((a for a in user_accounts if parsed.currency.upper() == a.currency.upper()), user_accounts[0])
+
+        if matched_acc and parsed.amount:
+            # 🟢 2. STAGE TRANSACTION IN PENDING INBOX
+            pending = PendingTransaction(
+                user_id=current_user.id,
+                raw_beneficiary_name=parsed.clean_merchant.upper(),
+                amount=Decimal(str(parsed.amount)),
+                transaction_date=date.today(),
+                source="web_assistant",
+                status="pending",
+                account_id=matched_acc.id
+            )
+            session.add(pending)
+
+            # 🟢 3. TRIGGER UNREAD NOTIFICATION FOR USER REVIEW
+            symbol = "៛" if parsed.currency == "KHR" else "$"
+            session.add(Notification(
+                user_id=current_user.id,
+                title="📥 Web Receipt Staged",
+                message=f"Scanned receipt from '{parsed.clean_merchant}' ({symbol}{parsed.amount:,.2f}) is waiting in your Pending Inbox.",
+                notification_type="warning",
+                is_read=False,
+                created_at=datetime.utcnow(),
+                entity_type="transaction",
+                entity_id=pending.id,
+                expires_at=datetime.utcnow() + timedelta(days=14)
+            ))
+
+        # 🟢 4. LOG AUDIT ENTRY IN AIProcessingLog
+        log_entry = AIProcessingLog(
+            user_id=current_user.id,
+            raw_input_text=f"Web Receipt Upload: {file.filename}",
+            parsed_transactions_count=1,
+            status="success"
+        )
+        session.add(log_entry)
+        session.commit()
+
+        return parsed
     except Exception as e:
+        session.rollback()
+        logger.error(f"Gemini Vision Error: {e}")
         raise HTTPException(status_code=500, detail=f"Gemini Vision error: {str(e)}")
 
 
@@ -580,8 +631,6 @@ def handle_ui_chat_assistant(
     try:
         today_str = date.today().strftime("%Y-%m-%d (%A)")
 
-        # 🟢 1. FETCH FULL DATABASE CONTEXT FOR CURRENT USER
-        # Accounts (Balances, Currencies, Credit Limits)
         user_accounts = session.exec(
             select(Account).where(Account.user_id == current_user.id, Account.is_active == True)
         ).all()
@@ -590,35 +639,29 @@ def handle_ui_chat_assistant(
             for a in user_accounts
         ] if user_accounts else ["None"]
 
-        # Categories
         user_categories = session.exec(
             select(Category).where((Category.user_id == current_user.id) | (Category.user_id == None))
         ).all()
         cat_summary = [f"{c.name} ({c.type})" for c in user_categories] if user_categories else ["General"]
 
-        # Budgets
         user_budgets = session.exec(
             select(Budget).where(Budget.user_id == current_user.id, Budget.is_active == True)
         ).all()
         budget_summary = [f"{b.name or 'Budget'}: Limit = ${b.monthly_limit:,.2f}" for b in user_budgets] if user_budgets else ["None"]
 
-        # Pending Transactions Inbox Count
         pending_count = len(session.exec(
             select(PendingTransaction).where(PendingTransaction.user_id == current_user.id, PendingTransaction.status == "pending")
         ).all())
 
-        # Unread Notifications Count
         unread_notifications = len(session.exec(
             select(Notification).where(Notification.user_id == current_user.id, Notification.is_read == False)
         ).all())
 
-        # User Settings
         settings = session.exec(
             select(UserSettings).where(UserSettings.user_id == current_user.id)
         ).first()
         pref_lang = settings.language if settings else "en"
 
-        # 🟢 2. SYSTEM INSTRUCTION WITH SCHEMA AWARENESS
         system_instruction = f"""
         You are the intelligent AI Personal Finance Assistant for Surveyor Pro.
         User Email: {current_user.email}
@@ -644,13 +687,11 @@ def handle_ui_chat_assistant(
            {{"tool": "create_transaction_tool", "amount": 0.0, "category_name": "...", "account_name": "...", "transaction_type": "expense"}}
         """
 
-        # 🟢 3. EXECUTE GEMINI VISION / CHAT CALL
         response_text = call_gemini_sdk(
             prompt=payload.message,
             system_instruction=system_instruction
         )
 
-        # 🟢 4. PROCESS TOOL CALL RESPONSES DYNAMICALLY
         if "{" in response_text and "tool" in response_text:
             try:
                 import json
@@ -658,7 +699,6 @@ def handle_ui_chat_assistant(
                 tool_payload = json.loads(clean_json)
                 call_name = tool_payload.get("tool", "")
 
-                # Tool A: Fetch Recent Transactions
                 if call_name == "get_recent_transactions_tool":
                     query_limit = min(int(tool_payload.get("limit", 5)), 15)
                     recent_txs = session.exec(
@@ -679,7 +719,6 @@ def handle_ui_chat_assistant(
 
                     return ChatResponse(reply="📜 **Recent Database Transactions:**\n\n" + "\n".join(lines))
 
-                # Tool B: Spending Summary
                 elif call_name == "get_spending_summary_tool":
                     start_str = tool_payload.get("start_date") or date.today().replace(day=1).strftime("%Y-%m-%d")
                     end_str = tool_payload.get("end_date") or date.today().strftime("%Y-%m-%d")
@@ -709,7 +748,6 @@ def handle_ui_chat_assistant(
                         reply=f"📊 Total expenses ({start_str} to {end_str}): **${total_spent:,.2f}** across {len(txs)} transactions."
                     )
 
-                # Tool C: Pending Inbox Items
                 elif call_name == "get_pending_inbox_tool":
                     pending_items = session.exec(
                         select(PendingTransaction).where(
@@ -724,7 +762,6 @@ def handle_ui_chat_assistant(
                     lines = [f"• **{pt.raw_beneficiary_name}**: ${pt.amount:,.2f} (Received: {pt.created_at.strftime('%b %d')})" for pt in pending_items]
                     return ChatResponse(reply=f"📥 **Pending Inbox ({len(pending_items)} items staged):**\n\n" + "\n".join(lines))
 
-                # Tool D: Create Manual Transaction
                 elif call_name == "create_transaction_tool":
                     amount_val = float(tool_payload.get("amount", 0.0))
                     cat_name_arg = str(tool_payload.get("category_name", "")).strip()
@@ -755,12 +792,11 @@ def handle_ui_chat_assistant(
                             session.add(new_tx)
                             session.add(matched_acc)
                             session.commit()
-
                             return ChatResponse(
                                 reply=f"✅ **Logged Transaction**: **{symbol}{amount_val:,.2f}** under **'{matched_cat.name if matched_cat else 'General'}'** into account **{matched_acc.account_name}**."
                             )
             except Exception as parse_err:
-                logger.warning(f"Tool execution JSON parse failed, returning raw response: {parse_err}")
+                logger.warning(f"Tool execution JSON parse failed: {parse_err}")
 
         return ChatResponse(reply=response_text)
 
