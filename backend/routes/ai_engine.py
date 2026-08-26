@@ -47,16 +47,6 @@ MODEL_NAME = "gemini-2.5-flash"
 
 # --- Pydantic Schemas ---
 class ParsedTransactionResult(BaseModel):
-    clean_merchant: str
-    amount: float
-    currency: str = "USD"
-    suggested_category_name: str
-    transaction_type: str = "expense"
-    transaction_date: str
-    confidence: float
-    summary_note: str
-
-class ParsedTransactionResult(BaseModel):
     clean_merchant: Optional[str] = "UNKNOWN MERCHANT"
     amount: float = 0.0
     currency: str = "USD"
