@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { FaChevronLeft, FaChevronRight, FaRegCalendarAlt, FaClock } from 'react-icons/fa';
 import { analyticsAPI } from "../API/index";
+import { useTranslation } from "react-i18next";
 
 const CalendarPage = () => {
+  const { t } = useTranslation();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState({});
   const [selectedDay, setSelectedDay] = useState(null);
@@ -12,8 +14,28 @@ const CalendarPage = () => {
   const month = currentDate.getMonth();
 
   const monthNames = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
+    t("calendar.months.january"),
+    t("calendar.months.february"),
+    t("calendar.months.march"),
+    t("calendar.months.april"),
+    t("calendar.months.may"),
+    t("calendar.months.june"),
+    t("calendar.months.july"),
+    t("calendar.months.august"),
+    t("calendar.months.september"),
+    t("calendar.months.october"),
+    t("calendar.months.november"),
+    t("calendar.months.december")
+  ];
+
+  const weekDayNames = [
+    t("calendar.weekdays.sun"),
+    t("calendar.weekdays.mon"),
+    t("calendar.weekdays.tue"),
+    t("calendar.weekdays.wed"),
+    t("calendar.weekdays.thu"),
+    t("calendar.weekdays.fri"),
+    t("calendar.weekdays.sat")
   ];
 
   const fetchCalendarEvents = async () => {
@@ -108,14 +130,14 @@ const CalendarPage = () => {
   return (
     <div className="w-full min-h-screen bg-[#F4F6FC] dark:bg-[#0B0F17] p-6 md:p-10 font-sans text-gray-700 dark:text-gray-200 grid grid-cols-12 gap-6 max-w-6xl mx-auto transition-colors">
 
-      {/* 1. MAIN CALENDAR GRID COMPONENT (FIXED BACKGROUND CLASS) */}
+      {/* 1. MAIN CALENDAR GRID COMPONENT */}
       <div className="col-span-12 lg:col-span-8 bg-white dark:bg-[#151D2A] rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 flex flex-col justify-between transition-colors">
 
         {/* HEADER CONTROLS ROW */}
         <div className="flex items-center justify-between border-b border-gray-50 dark:border-gray-800/80 pb-5 mb-4">
           <div className="space-y-0.5">
             <h1 className="text-lg font-black text-gray-800 dark:text-gray-100 uppercase tracking-wide">{monthNames[month]} {year}</h1>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 font-bold uppercase tracking-wider">Financial Schedule Matrix</p>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 font-bold uppercase tracking-wider">{t("calendar.schedule_matrix_subtitle")}</p>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={handlePrevMonth} className="p-2.5 bg-gray-50 dark:bg-[#1E293B] hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl transition-all cursor-pointer">
@@ -129,7 +151,7 @@ const CalendarPage = () => {
 
         {/* WEEKDAYS LABELS PANEL */}
         <div className="grid grid-cols-7 text-center font-black text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => <div key={d} className="py-1">{d}</div>)}
+          {weekDayNames.map((d, i) => <div key={i} className="py-1">{d}</div>)}
         </div>
 
         {/* DAY CELLS GRID FRAME */}
@@ -202,7 +224,7 @@ const CalendarPage = () => {
                   })}
                   {dayEvents.length > 2 && (
                     <div className={`text-[7px] text-center font-extrabold ${isSelected ? 'text-white/80' : 'text-gray-400 dark:text-gray-500'}`}>
-                      + {dayEvents.length - 2} more
+                      + {dayEvents.length - 2} {t("calendar.more")}
                     </div>
                   )}
                 </div>
@@ -216,21 +238,21 @@ const CalendarPage = () => {
       <div className="col-span-12 lg:col-span-4 bg-white dark:bg-[#151D2A] rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 flex flex-col gap-4 transition-colors">
         <div>
           <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
-            <FaRegCalendarAlt /> Day Target Specifics
+            <FaRegCalendarAlt /> {t("calendar.day_target_specifics")}
           </h3>
           <p className="text-[11px] text-gray-400 dark:text-gray-500 font-semibold mt-0.5">
-            {selectedDay ? `Commitments for ${monthNames[month]} ${selectedDay}, ${year}` : "Select a day node card cell to audit schedules"}
+            {selectedDay ? `${t("calendar.commitments_for")} ${monthNames[month]} ${selectedDay}, ${year}` : t("calendar.select_day_instruction")}
           </p>
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-3 pr-1 max-h-[420px] custom-scrollbar">
           {!selectedDay ? (
             <div className="text-center py-20 text-xs text-gray-400 dark:text-gray-500 italic font-semibold border border-dashed border-gray-100 dark:border-gray-800 rounded-2xl bg-gray-50/50 dark:bg-[#1E293B]/40 p-4">
-              👈 Tap any calendar day element cell grid block to overview upcoming commitments.
+              {t("calendar.tap_day_instruction")}
             </div>
           ) : activeDayEvents.length === 0 ? (
             <div className="text-center py-20 text-xs text-gray-400 dark:text-gray-500 font-bold bg-gray-50/40 dark:bg-[#1E293B]/40 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
-              🎉 Schedule Clear: No obligations or deadlines fall on this date node.
+              {t("calendar.schedule_clear")}
             </div>
           ) : (
             activeDayEvents.map(ev => {

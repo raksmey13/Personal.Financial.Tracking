@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { FaPlus, FaChevronDown, FaSyncAlt, FaEye, FaEyeSlash, FaEllipsisV, FaTrashAlt, FaPen, FaCalendarAlt } from "react-icons/fa";
 import { accountAPI, transactionAPI } from "../API/index";
+import { useTranslation } from "react-i18next";
 
 const AccountPage = () => {
   const [accounts, setAccounts] = useState([]);
@@ -9,6 +10,7 @@ const AccountPage = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hideBalances, setHideBalances] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const { t } = useTranslation();
 
   const [expandedAccountId, setExpandedAccountId] = useState(null);
   const [editingAccountId, setEditingAccountId] = useState(null);
@@ -218,17 +220,17 @@ const AccountPage = () => {
         <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 grid grid-cols-1 gap-2 text-left px-1">
         {acc.note && (
           <div className="bg-gray-50/50 dark:bg-[#1E293B]/50 p-2.5 rounded-lg border border-gray-100 dark:border-gray-800 text-xs mb-1">
-            <span className="font-bold text-gray-400 dark:text-gray-400 block uppercase text-[9px] tracking-wider mb-0.5">Account Note</span>
+            <span className="font-bold text-gray-400 dark:text-gray-400 block uppercase text-[9px] tracking-wider mb-0.5">{t("accounts.note_title")}</span>
             <p className="text-gray-600 dark:text-gray-300 font-medium italic">{acc.note}</p>
           </div>
         )}
         <div className="grid grid-cols-2 gap-3 text-center">
           <div className="bg-gray-50 dark:bg-[#1E293B] p-3 rounded-xl">
-            <span className="text-[10px] text-gray-400 dark:text-gray-400 font-bold uppercase tracking-wider block mb-1">Borrowed Base</span>
+            <span className="text-[10px] text-gray-400 dark:text-gray-400 font-bold uppercase tracking-wider block mb-1">{t("accounts.borrowed_base")}</span>
             <span className="text-sm font-extrabold text-gray-700 dark:text-gray-200">{formatMoney(totalBorrowed, curr)}</span>
           </div>
           <div className="bg-green-50 dark:bg-green-950/40 p-3 rounded-xl">
-            <span className="text-[10px] text-green-600 dark:text-green-400 font-bold uppercase tracking-wider block mb-1">Total Paid</span>
+            <span className="text-[10px] text-green-600 dark:text-green-400 font-bold uppercase tracking-wider block mb-1">{t("accounts.total_paid")}</span>
             <span className="text-sm font-extrabold text-green-700 dark:text-green-300">{formatMoney(totalPaid, curr)}</span>
           </div>
         </div>
@@ -253,17 +255,17 @@ const AccountPage = () => {
       <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 grid grid-cols-1 gap-2 text-left px-1">
         {acc.note && (
           <div className="bg-gray-50/50 dark:bg-[#1E293B]/50 p-2.5 rounded-lg border border-gray-100 dark:border-gray-800 text-xs mb-1">
-            <span className="font-bold text-gray-400 dark:text-gray-400 block uppercase text-[9px] tracking-wider mb-0.5">Account Note</span>
+            <span className="font-bold text-gray-400 dark:text-gray-400 block uppercase text-[9px] tracking-wider mb-0.5">{t("accounts.note_title")}</span>
             <p className="text-gray-600 dark:text-gray-300 font-medium italic">{acc.note}</p>
           </div>
         )}
         <div className="grid grid-cols-2 gap-3 text-center">
           <div className="bg-red-50 dark:bg-red-950/40 p-3 rounded-xl">
-            <span className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider block mb-1">Total Spending Swipe</span>
+            <span className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider block mb-1">{t("accounts.total_spent_swipe")}</span>
             <span className="text-sm font-extrabold text-red-700 dark:text-red-300">{formatMoney(totalSpent, curr)}</span>
           </div>
           <div className="bg-green-50 dark:bg-green-950/40 p-3 rounded-xl">
-            <span className="text-[10px] text-green-600 dark:text-green-400 font-bold uppercase tracking-wider block mb-1">Payments Settled</span>
+            <span className="text-[10px] text-green-600 dark:text-green-400 font-bold uppercase tracking-wider block mb-1">{t("accounts.payments_settled")}</span>
             <span className="text-sm font-extrabold text-green-700 dark:text-green-300">{formatMoney(totalPayments, curr)}</span>
           </div>
         </div>
@@ -275,17 +277,17 @@ const AccountPage = () => {
     <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 grid grid-cols-1 gap-2 text-left px-1">
       {acc.note && (
         <div className="bg-gray-50/50 dark:bg-[#1E293B]/50 p-2.5 rounded-lg border border-gray-100 dark:border-gray-800 text-xs mb-1">
-          <span className="font-bold text-gray-400 dark:text-gray-400 block uppercase text-[9px] tracking-wider mb-0.5">Account Note</span>
+          <span className="font-bold text-gray-400 dark:text-gray-400 block uppercase text-[9px] tracking-wider mb-0.5">{t("accounts.note_title")}</span>
           <p className="text-gray-600 dark:text-gray-300 font-medium italic">{acc.note}</p>
         </div>
       )}
       <div className="grid grid-cols-2 gap-3 text-center">
         <div className="bg-green-50 dark:bg-green-950/40 p-3 rounded-xl">
-          <span className="text-[10px] text-green-600 dark:text-green-400 font-bold uppercase tracking-wider block mb-1">Total Cash Inflow</span>
+          <span className="text-[10px] text-green-600 dark:text-green-400 font-bold uppercase tracking-wider block mb-1">{t("accounts.total_inflow")}</span>
           <span className="text-sm font-extrabold text-green-700 dark:text-green-300">{formatMoney(acc.totalInflow, curr)}</span>
         </div>
         <div className="bg-red-50 dark:bg-red-950/40 p-3 rounded-xl">
-          <span className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider block mb-1">Total Cash Outflow</span>
+          <span className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider block mb-1">{t("accounts.total_outflow")}</span>
           <span className="text-sm font-extrabold text-red-700 dark:text-red-300">{formatMoney(acc.totalOutflow, curr)}</span>
         </div>
       </div>
@@ -299,28 +301,28 @@ return (
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-[#151D2A] p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 transition-colors">
-          <span className="text-[11px] uppercase tracking-wider font-extrabold text-gray-400 dark:text-gray-400 block mb-1">USD Assets</span>
+          <span className="text-[11px] uppercase tracking-wider font-extrabold text-gray-400 dark:text-gray-400 block mb-1">{t("accounts.usd_assets")}</span>
           <div className="text-2xl font-black text-green-600 dark:text-green-400">
             {hideBalances ? "$ ••••••" : formatMoney(totalAssetsUSD, "USD")}
           </div>
         </div>
 
         <div className="bg-white dark:bg-[#151D2A] p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 transition-colors">
-          <span className="text-[11px] uppercase tracking-wider font-extrabold text-gray-400 dark:text-gray-400 block mb-1">KHR Assets</span>
+          <span className="text-[11px] uppercase tracking-wider font-extrabold text-gray-400 dark:text-gray-400 block mb-1">{t("accounts.khr_assets")}</span>
           <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
             {hideBalances ? "••••••" : formatMoney(totalAssetsKHR, "KHR")}
           </div>
         </div>
 
         <div className="bg-white dark:bg-[#151D2A] p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 transition-colors">
-          <span className="text-[11px] uppercase tracking-wider font-extrabold text-gray-400 dark:text-gray-400 block mb-1">Total Liabilities</span>
+          <span className="text-[11px] uppercase tracking-wider font-extrabold text-gray-400 dark:text-gray-400 block mb-1">{t("accounts.total_liabilities")}</span>
           <div className="text-2xl font-black text-red-500 dark:text-red-400">
             {hideBalances ? "$ ••••••" : formatMoney(totalLiabilitiesUSD, "USD")}
           </div>
         </div>
 
         <div className="bg-white dark:bg-[#151D2A] p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 bg-gradient-to-br from-blue-50/20 to-indigo-50/10 dark:from-blue-950/20 dark:to-indigo-950/10 transition-colors">
-          <span className="text-[11px] uppercase tracking-wider font-semibold text-blue-600 dark:text-blue-400 block mb-1">USD Net Worth</span>
+          <span className="text-[11px] uppercase tracking-wider font-semibold text-blue-600 dark:text-blue-400 block mb-1">{t("accounts.usd_net_worth")}</span>
           <div className={`text-2xl font-black ${netWorthUSD >= 0 ? "text-blue-600 dark:text-blue-400" : "text-red-500 dark:text-red-400"}`}>
             {hideBalances ? "$ ••••••" : formatMoney(netWorthUSD, "USD")}
           </div>
@@ -329,7 +331,7 @@ return (
 
       {enhancedAccounts.length === 0 ? (
         <div className="text-center py-12 text-gray-400 italic text-sm bg-white dark:bg-[#151D2A] rounded-xl border border-gray-100 dark:border-gray-800">
-          No accounts active yet. Click the '+' button below to initialize your first wallet!
+          {t("accounts.no_accounts")}
         </div>
       ) : (
         enhancedAccounts.map((acc) => {
@@ -356,7 +358,7 @@ return (
             >
               {showsDueWarning && (
                 <div className="absolute top-0 left-6 transform -translate-y-1/2 bg-amber-500 text-white px-3 py-0.5 rounded-full text-[10px] font-black uppercase flex items-center gap-1 shadow-sm z-10">
-                  <FaCalendarAlt size={8} /> Due in {parseInt(acc.payment_due_day, 10) - currentDayOfMonth} Days
+                  <FaCalendarAlt size={8} /> {t("accounts.due_in")} {parseInt(acc.payment_due_day, 10) - currentDayOfMonth} {t("accounts.days")}
                 </div>
               )}
 
@@ -369,7 +371,10 @@ return (
                       acc.account_type === "Loan" ? "bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400" :
                       acc.account_type === "Savings" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400" : "bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400"
                     }`}>
-                      {acc.account_type || "Normal"}
+                      {acc.account_type === "Credit Card" ? t("accounts.type_credit") :
+                       acc.account_type === "Loan" ? t("accounts.type_loan") :
+                       acc.account_type === "Savings" ? t("accounts.type_savings") :
+                       t("accounts.type_normal")}
                     </span>
 
                     <span className="text-[10px] bg-gray-100 dark:bg-[#1E293B] text-gray-700 dark:text-gray-300 font-extrabold px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 uppercase">
@@ -378,14 +383,14 @@ return (
 
                     {acc.payment_due_day && (
                       <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50 font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <FaCalendarAlt size={8} /> Due Day {acc.payment_due_day}
+                        <FaCalendarAlt size={8} /> {t("accounts.due_day")} {acc.payment_due_day}
                       </span>
                     )}
                   </div>
 
                   {acc.account_type === "Credit Card" && (
                     <p className="text-xs text-gray-400 dark:text-gray-400 font-semibold tracking-wide">
-                      Available Credit: <span className="text-gray-700 dark:text-gray-200 font-bold">{formatMoney(availableCredit, accountCurrency)}</span> / {formatMoney(parseFloat(acc.credit_limit), accountCurrency)}
+                      {t("accounts.available_credit")}: <span className="text-gray-700 dark:text-gray-200 font-bold">{formatMoney(availableCredit, accountCurrency)}</span> / {formatMoney(parseFloat(acc.credit_limit), accountCurrency)}
                     </p>
                   )}
 
@@ -393,14 +398,14 @@ return (
                     <div className="w-10 h-5 bg-green-500 rounded-full relative">
                       <div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div>
                     </div>
-                    <span className="text-xs text-gray-400 dark:text-gray-400 font-medium">Active Ledger</span>
+                    <span className="text-xs text-gray-400 dark:text-gray-400 font-medium">{t("accounts.active_ledger")}</span>
                   </div>
                 </div>
 
                 <div className="text-right space-y-2">
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-400 block mb-0.5">
-                      {acc.account_type === "Savings" ? "Accumulated Wealth Vault" : acc.account_type === "Normal" ? "Available Balance" : acc.account_type === "Loan" ? "Outstanding Balance" : "Current Owed Debt"}
+                      {acc.account_type === "Savings" ? t("accounts.accumulated_vault") : acc.account_type === "Normal" ? t("accounts.available_balance") : acc.account_type === "Loan" ? t("accounts.outstanding_balance") : t("accounts.owed_debt")}
                     </span>
                     <div className={`font-black text-lg tracking-tight ${
                       ["Normal", "Savings"].includes(acc.account_type)
@@ -436,7 +441,7 @@ return (
                           className="w-full px-4 py-2 text-xs font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2 transition-colors border-b border-gray-50 dark:border-gray-800"
                         >
                           <FaPen size={10} />
-                          Edit Wallet
+                          {t("accounts.edit_wallet")}
                         </button>
 
                         <button
@@ -445,7 +450,7 @@ return (
                           className="w-full px-4 py-2 text-xs font-bold text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-2 transition-colors"
                         >
                           <FaTrashAlt size={10} />
-                          Delete Wallet
+                          {t("accounts.delete_wallet")}
                         </button>
                       </div>
                     )}
@@ -472,18 +477,18 @@ return (
         <div className="bg-white dark:bg-[#151D2A] border border-gray-100 dark:border-gray-800 rounded-3xl w-full max-w-xl shadow-2xl my-auto overflow-hidden flex flex-col max-h-[90vh]">
           <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
             <h2 className="text-xl font-extrabold text-center text-black dark:text-gray-100 uppercase tracking-wide">
-              {editingAccountId ? "Edit Account Details" : "Create New Account"}
+              {editingAccountId ? t("accounts.edit_account") : t("accounts.create_account")}
             </h2>
           </div>
 
           <form onSubmit={handleSave} className="p-6 overflow-y-auto space-y-4 text-sm flex-1 custom-scrollbar">
             <div>
-              <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">Name</label>
+              <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">{t("accounts.name")}</label>
               <input
                 type="text"
                 required
                 value={formData.name}
-                placeholder="e.g., Cash, ABA Bank, Emergency Fund"
+                placeholder={t("accounts.name_placeholder")}
                 className="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1E293B] text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2.5 focus:outline-none focus:border-blue-400 font-semibold"
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
               />
@@ -491,21 +496,21 @@ return (
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">Account Type</label>
+                <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">{t("accounts.account_type")}</label>
                 <select
                   value={formData.account_type}
                   className="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1E293B] text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2.5 focus:outline-none font-semibold cursor-pointer"
                   onChange={(e) => setFormData({...formData, account_type: e.target.value})}
                 >
-                  <option value="Normal">Cash / Bank Account</option>
-                  <option value="Savings">Savings / Wealth Vault</option>
-                  <option value="Credit Card">Credit Card</option>
-                  <option value="Loan">Loan / Personal Debt</option>
+                  <option value="Normal">{t("accounts.type_normal")}</option>
+                  <option value="Savings">{t("accounts.type_savings")}</option>
+                  <option value="Credit Card">{t("accounts.type_credit")}</option>
+                  <option value="Loan">{t("accounts.type_loan")}</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">Currency</label>
+                <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">{t("accounts.currency")}</label>
                 <select
                   value={formData.currency}
                   className="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1E293B] text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2.5 focus:outline-none font-semibold cursor-pointer"
@@ -519,7 +524,7 @@ return (
 
             {formData.account_type === "Credit Card" && (
               <div className="animate-in fade-in duration-150">
-                <label className="block text-amber-700 dark:text-amber-400 font-bold mb-1">Credit Limit</label>
+                <label className="block text-amber-700 dark:text-amber-400 font-bold mb-1">{t("accounts.credit_limit")}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -534,7 +539,7 @@ return (
             {!["Normal", "Savings"].includes(formData.account_type) && (
               <div className="animate-in fade-in duration-150 relative" ref={dayDropdownRef}>
                 <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
-                  {formData.account_type === "Credit Card" ? "Statement Due Day of Month" : "Monthly Repayment Day"}
+                  {formData.account_type === "Credit Card" ? t("accounts.statement_due_day") : t("accounts.monthly_repayment_day")}
                 </label>
 
                 <div
@@ -542,7 +547,7 @@ return (
                   className="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1E293B] text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2.5 font-semibold cursor-pointer flex justify-between items-center hover:border-gray-400 transition-colors"
                 >
                   <span>
-                    {formData.payment_due_day ? `Day ${formData.payment_due_day}` : "-- Select Day (Optional) --"}
+                    {formData.payment_due_day ? `${t("accounts.day")} ${formData.payment_due_day}` : t("accounts.select_day_optional")}
                   </span>
                   <FaChevronDown className={`text-gray-400 transition-transform duration-200 ${isDayDropdownOpen ? "rotate-180" : ""}`} size={12} />
                 </div>
@@ -553,7 +558,7 @@ return (
                       onClick={() => { setFormData({...formData, payment_due_day: ""}); setIsDayDropdownOpen(false); }}
                       className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 cursor-pointer font-medium"
                     >
-                      -- Select Day (Optional) --
+                      {t("accounts.select_day_optional")}
                     </div>
                     {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
                       <div
@@ -563,7 +568,7 @@ return (
                           String(formData.payment_due_day) === String(day) ? "bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400" : "text-gray-700 dark:text-gray-200"
                         }`}
                       >
-                        Day {day}
+                        {t("accounts.day")} {day}
                       </div>
                     ))}
                   </div>
@@ -574,8 +579,8 @@ return (
             <div>
               <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
                 {["Normal", "Savings"].includes(formData.account_type)
-                  ? (editingAccountId ? "Current Balance" : "Initial Starting Balance")
-                  : (editingAccountId ? "Current Outstanding Owed Debt" : "Starting Debt Amount Balance")
+                  ? (editingAccountId ? t("accounts.current_balance") : t("accounts.initial_balance"))
+                  : (editingAccountId ? t("accounts.current_owed_debt") : t("accounts.starting_debt"))
                 }
               </label>
               <input
@@ -588,10 +593,10 @@ return (
             </div>
 
             <div>
-              <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">Note</label>
+              <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">{t("accounts.note")}</label>
               <textarea
                 value={formData.note}
-                placeholder="Optional details regarding this account"
+                placeholder={t("accounts.note_placeholder")}
                 rows="2"
                 className="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1E293B] text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2.5 focus:outline-none resize-none"
                 onChange={(e) => setFormData({...formData, note: e.target.value})}
@@ -604,13 +609,13 @@ return (
                 onClick={() => { setShowModal(false); setEditingAccountId(null); }}
                 className="text-gray-500 dark:text-gray-400 font-bold hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer text-base px-2 py-1"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="submit"
                 className="bg-[#3D5AFE] text-white px-6 py-2.5 rounded-xl font-bold text-base shadow-md hover:bg-blue-700 transition-colors cursor-pointer"
               >
-                Save Account
+                {t("common.save_account")}
               </button>
             </div>
           </form>

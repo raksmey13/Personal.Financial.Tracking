@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { FaUser, FaEnvelope, FaLock, FaUserPlus, FaEye, FaEyeSlash, FaCheck, FaKey, FaArrowLeft, FaRedo } from 'react-icons/fa';
 import { userAPI } from '../API/index';
+import { useTranslation } from 'react-i18next';
 
 const Signup = ({ onSwitchToLogin }) => {
+  const { t } = useTranslation();
+
   // Step State: 1 = Registration Form, 2 = 6-Digit OTP Entry Form
   const [step, setStep] = useState(1);
 
@@ -38,9 +41,9 @@ const Signup = ({ onSwitchToLogin }) => {
 
   const getStrengthLabel = () => {
     if (!password) return { text: "", color: "bg-gray-200" };
-    if (strength <= 1) return { text: "Weak Password", color: "bg-red-500", textCol: "text-red-500" };
-    if (strength === 2 || strength === 3) return { text: "Moderate Password", color: "bg-amber-500", textCol: "text-amber-500" };
-    return { text: "Strong Password", color: "bg-emerald-500", textCol: "text-emerald-500" };
+    if (strength <= 1) return { text: t("auth.strength_weak"), color: "bg-red-500", textCol: "text-red-500" };
+    if (strength === 2 || strength === 3) return { text: t("auth.strength_moderate"), color: "bg-amber-500", textCol: "text-amber-500" };
+    return { text: t("auth.strength_strong"), color: "bg-emerald-500", textCol: "text-emerald-500" };
   };
 
   // 🚀 STEP 1: SUBMIT ACCOUNT CREATION
@@ -50,7 +53,7 @@ const Signup = ({ onSwitchToLogin }) => {
     setSuccessMsg("");
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match. Please verify entry values.");
+      setError(t("auth.passwords_do_not_match"));
       return;
     }
 
@@ -64,7 +67,7 @@ const Signup = ({ onSwitchToLogin }) => {
         password: password
       });
 
-      setSuccessMsg(`Account created! A 6-digit OTP code has been sent to ${email}. Please check your inbox.`);
+      setSuccessMsg(`${t("auth.account_created_otp_sent")} ${email}. ${t("auth.check_inbox")}`);
       setStep(2);
 
     } catch (err) {
@@ -73,9 +76,9 @@ const Signup = ({ onSwitchToLogin }) => {
       if (typeof serverDetail === 'string') {
         setError(serverDetail);
       } else if (Array.isArray(serverDetail)) {
-        setError(serverDetail[0]?.msg || "Invalid registration input parameters.");
+        setError(serverDetail[0]?.msg || t("auth.invalid_input_error"));
       } else {
-        setError("Registration failed. Please check your inputs and try again.");
+        setError(t("auth.registration_failed_error"));
       }
     } finally {
       setLoading(false);
@@ -89,7 +92,7 @@ const Signup = ({ onSwitchToLogin }) => {
     setSuccessMsg("");
 
     if (!otpCode || otpCode.trim().length < 6) {
-      setError("Please enter a valid 6-digit OTP code.");
+      setError(t("auth.invalid_otp_format"));
       return;
     }
 
@@ -101,14 +104,14 @@ const Signup = ({ onSwitchToLogin }) => {
         otp_code: otpCode.trim()
       });
 
-      alert(response.data?.message || "Account verified successfully! Redirecting to login.");
+      alert(response.data?.message || t("auth.otp_verified_alert"));
       onSwitchToLogin();
 
     } catch (err) {
       console.error("OTP verification error:", err);
       setError(
         err.response?.data?.detail ||
-        "Invalid OTP code. Please check the code and try again."
+        t("auth.invalid_otp_code")
       );
     } finally {
       setLoading(false);
@@ -126,12 +129,12 @@ const Signup = ({ onSwitchToLogin }) => {
         email: email.trim()
       });
 
-      setSuccessMsg(response.data?.message || "A new OTP has been sent to your email.");
+      setSuccessMsg(response.data?.message || t("auth.new_otp_sent"));
     } catch (err) {
       console.error("Resend OTP error:", err);
       setError(
         err.response?.data?.detail ||
-        "Failed to resend OTP. Please try again."
+        t("auth.resend_otp_failed")
       );
     } finally {
       setResendLoading(false);
@@ -147,12 +150,12 @@ const Signup = ({ onSwitchToLogin }) => {
         {/* Header Block */}
         <div className="text-center space-y-2">
           <h2 className="text-2xl font-black text-gray-800 tracking-tight">
-            {step === 1 ? "Create Your Account" : "Verify Account OTP"}
+            {step === 1 ? t("auth.create_account_title") : t("auth.verify_otp_title")}
           </h2>
           <p className="text-xs text-gray-400 font-semibold">
             {step === 1
-              ? "Join PFTrack to begin tracking personal finances"
-              : `Enter the 6-digit OTP code sent to ${email}`}
+              ? t("auth.create_account_subtitle")
+              : `${t("auth.enter_otp_subtitle")} ${email}`}
           </p>
         </div>
 
@@ -179,7 +182,7 @@ const Signup = ({ onSwitchToLogin }) => {
                 <input
                   type="text"
                   required
-                  placeholder="First Name"
+                  placeholder={t("auth.first_name_placeholder")}
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
@@ -190,7 +193,7 @@ const Signup = ({ onSwitchToLogin }) => {
                 <FaUser className="absolute left-4 top-4 text-gray-400 text-xs" />
                 <input
                   type="text"
-                  placeholder="Last Name"
+                  placeholder={t("auth.last_name_placeholder")}
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
@@ -204,7 +207,7 @@ const Signup = ({ onSwitchToLogin }) => {
               <input
                 type="email"
                 required
-                placeholder="Valid Email Address"
+                placeholder={t("auth.valid_email_placeholder")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
@@ -218,7 +221,7 @@ const Signup = ({ onSwitchToLogin }) => {
                 <input
                   type={showPassword ? "text" : "password"}
                   required
-                  placeholder="Choose Secure Password"
+                  placeholder={t("auth.choose_password_placeholder")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-11 pr-11 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
@@ -253,7 +256,7 @@ const Signup = ({ onSwitchToLogin }) => {
               <input
                 type={showConfirmPassword ? "text" : "password"}
                 required
-                placeholder="Confirm Chosen Password"
+                placeholder={t("auth.confirm_password_placeholder")}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="w-full pl-11 pr-11 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
@@ -277,7 +280,7 @@ const Signup = ({ onSwitchToLogin }) => {
               className="w-full py-3 bg-blue-600 text-white rounded-2xl font-bold text-xs tracking-wide shadow-lg shadow-blue-500/10 hover:bg-blue-700 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
               <FaUserPlus />
-              {loading ? "Registering Credentials..." : "Create Account & Send OTP"}
+              {loading ? t("auth.registering") : t("auth.create_account_send_otp_btn")}
             </button>
           </form>
         )}
@@ -291,7 +294,7 @@ const Signup = ({ onSwitchToLogin }) => {
                 type="text"
                 required
                 maxLength={6}
-                placeholder="Enter 6-Digit OTP Code"
+                placeholder={t("auth.enter_otp_placeholder")}
                 value={otpCode}
                 onChange={(e) => setOtpCode(e.target.value)}
                 className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-center text-sm font-black tracking-widest placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
@@ -304,7 +307,7 @@ const Signup = ({ onSwitchToLogin }) => {
               className="w-full py-3 bg-emerald-600 text-white rounded-2xl font-bold text-xs tracking-wide shadow-lg shadow-emerald-500/10 hover:bg-emerald-700 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
               <FaCheck />
-              {loading ? "Verifying Code..." : "Verify OTP & Activate Account"}
+              {loading ? t("auth.verifying") : t("auth.verify_otp_btn")}
             </button>
 
             {/* Back to Registration & Resend OTP Action Row */}
@@ -314,7 +317,7 @@ const Signup = ({ onSwitchToLogin }) => {
                 onClick={() => { setStep(1); setError(""); setSuccessMsg(""); }}
                 className="py-2 text-gray-400 font-bold text-xs hover:text-gray-600 transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                <FaArrowLeft /> Back
+                <FaArrowLeft /> {t("common.back")}
               </button>
 
               <button
@@ -324,7 +327,7 @@ const Signup = ({ onSwitchToLogin }) => {
                 className="py-2 text-blue-600 font-bold text-xs hover:underline transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
               >
                 <FaRedo className={`${resendLoading ? "animate-spin" : ""}`} />
-                {resendLoading ? "Sending..." : "Resend OTP"}
+                {resendLoading ? t("auth.sending") : t("auth.resend_otp")}
               </button>
             </div>
           </form>
@@ -332,13 +335,13 @@ const Signup = ({ onSwitchToLogin }) => {
 
         {/* Switch Route Footer */}
         <div className="text-center pt-2 border-t border-gray-50 text-xs font-semibold text-gray-400">
-          Already have an account?{" "}
+          {t("auth.already_have_account")}{" "}
           <button
             type="button"
             onClick={onSwitchToLogin}
             className="text-blue-600 font-bold hover:underline cursor-pointer"
           >
-            Sign In Instead
+            {t("auth.sign_in_instead")}
           </button>
         </div>
 

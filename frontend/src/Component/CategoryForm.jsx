@@ -3,12 +3,14 @@ import { FaTag, FaRegTrashAlt, FaPlus, FaMinus, FaHome, FaShoppingCart, FaCar, F
 import TransactionModal from "./TransactionModal";
 import { categoryAPI, accountAPI, transactionAPI } from "../API/index";
 import { getCategoryIconSource } from '../utils/icon';
+import { useTranslation } from "react-i18next";
 
 const CategoryForm = () => {
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [showIncomeExpenseModal, setShowIncomeExpenseModal] = useState(null); // "income" | "expense" | null
   const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const { t } = useTranslation();
 
   // 🚀 PAGINATION STATES
   const [currentPage, setCurrentPage] = useState(1);
@@ -122,10 +124,10 @@ const CategoryForm = () => {
       }
 
       if (response.status === 200 || response.status === 201) {
-          if (editingCategoryId) {
-          alert("Category updated successfully!");
+        if (editingCategoryId) {
+          alert(t("categories.alert_updated"));
         } else {
-          alert("Category created successfully!");
+          alert(t("categories.alert_created"));
         }
         setFormData({ name: '', icon: 'tag', type: 'expense', parent_id: '' });
         setEditingCategoryId(null);
@@ -133,7 +135,7 @@ const CategoryForm = () => {
       }
     } catch (error) {
       console.error("Axios save error on category object:", error);
-      alert(error.response?.data?.detail || "An error occurred while saving category.");
+      alert(error.response?.data?.detail || t("categories.alert_save_error"));
     }
   };
 
@@ -148,11 +150,11 @@ const CategoryForm = () => {
   };
 
   const handleDeleteCategory = async (id) => {
-    if (window.confirm("Are you sure you want to delete this category? If it's a main category, its subcategories will be detached.")) {
+    if (window.confirm(t("categories.confirm_delete"))) {
       try {
         const response = await categoryAPI.delete(id);
         if (response.status === 200) {
-          alert("Category deleted successfully!");
+          alert(t("categories.alert_deleted"));
           fetchInitialData();
           const totalMain = categories.filter((cat) => cat.parent_id === null).length - 1;
           const maxPage = Math.ceil(totalMain / itemsPerPage) || 1;
@@ -162,7 +164,7 @@ const CategoryForm = () => {
         }
       } catch (error) {
         console.error("Error deleting category:", error);
-        alert("Failed to delete category. It might be linked to existing transactions.");
+        alert(t("categories.alert_delete_error"));
       }
     }
   };
@@ -195,24 +197,24 @@ const CategoryForm = () => {
     {/* LEFT SIDE: ADD / EDIT CATEGORY */}
     <div className="w-full lg:w-[320px] bg-white dark:bg-[#151D2A] rounded-3xl shadow-xl p-8 flex-shrink-0 border border-gray-100 dark:border-gray-800 transition-colors">
       <h2 className="text-xl font-bold text-center text-[#212529] dark:text-gray-100 mb-8">
-        {editingCategoryId ? "Edit Category" : "Add Category"}
+        {editingCategoryId ? t("categories.edit_category") : t("categories.add_category")}
       </h2>
 
       <form onSubmit={handleSaveCategory} className="space-y-5">
         <div>
-          <label className="block text-gray-400 dark:text-gray-400 text-[10px] font-bold uppercase mb-1">Category name</label>
+          <label className="block text-gray-400 dark:text-gray-400 text-[10px] font-bold uppercase mb-1">{t("categories.category_name")}</label>
           <input
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1E293B] text-gray-800 dark:text-gray-100 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-300 font-semibold"
-            placeholder="e.g., Food, Salary"
+            placeholder={t("categories.name_placeholder")}
             required
           />
         </div>
 
         <div>
-          <label className="block text-gray-400 dark:text-gray-400 text-[10px] font-bold uppercase mb-1">Parent Category (Optional)</label>
+          <label className="block text-gray-400 dark:text-gray-400 text-[10px] font-bold uppercase mb-1">{t("categories.parent_category")}</label>
           <div className="relative">
             <select
               value={formData.parent_id}
@@ -235,7 +237,7 @@ const CategoryForm = () => {
               }}
               className="w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1E293B] text-gray-700 dark:text-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-300 font-semibold appearance-none cursor-pointer"
             >
-              <option value="">-- None (Set as Main Category) --</option>
+              <option value="">-- {t("categories.none_main_category")} --</option>
               {validParentCategories.map((pCat) => (
                 <option key={pCat.id} value={pCat.id}>{pCat.name}</option>
               ))}
@@ -250,7 +252,7 @@ const CategoryForm = () => {
         <div className="flex items-center justify-between py-2">
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
           <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-50 dark:bg-[#1E293B] text-gray-500 dark:text-gray-300 px-4 py-1 rounded-lg text-[10px] font-bold border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-            Choose Icon
+            {t("categories.choose_icon")}
           </button>
           <div className="w-12 h-12 rounded-full bg-[#c9e4e4] dark:bg-[#1E293B] border-4 border-white dark:border-gray-700 shadow-sm flex items-center justify-center overflow-hidden text-gray-700 dark:text-gray-200">
              {renderCategoryIcon(formData.icon, categories.find(c => c.name.toLowerCase() === formData.name.toLowerCase().trim()))}
@@ -260,7 +262,7 @@ const CategoryForm = () => {
         {/* SYSTEM ALLOCATION TYPE */}
         <div className={`space-y-3 pt-2 ${formData.parent_id ? 'opacity-50 pointer-events-none' : ''}`}>
           <p className="text-gray-400 text-[10px] font-bold uppercase">
-            System Allocation Type {formData.parent_id && <span className="text-blue-500 lowercase ml-1">(Inherited from parent)</span>}
+            {t("categories.system_allocation_type")} {formData.parent_id && <span className="text-blue-500 lowercase ml-1">({t("categories.inherited_from_parent")})</span>}
           </p>
           <div className="flex items-center gap-6 font-semibold text-gray-700 dark:text-gray-300">
             <label className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
@@ -272,7 +274,7 @@ const CategoryForm = () => {
                 className="w-4 h-4 text-blue-500"
                 disabled={!!formData.parent_id}
               />
-              Income
+              {t("transactions.income")}
             </label>
             <label className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
               <input
@@ -283,17 +285,17 @@ const CategoryForm = () => {
                 className="w-4 h-4 text-blue-500"
                 disabled={!!formData.parent_id}
               />
-              Expense
+              {t("transactions.expense")}
             </label>
           </div>
         </div>
 
         <div className="flex justify-end items-center gap-4 pt-6">
           <button type="button" onClick={handleCancelEdit} className="text-red-400 font-bold text-sm uppercase hover:text-red-600">
-            Cancel
+            {t("common.cancel")}
           </button>
           <button type="submit" className="bg-[#4caf50] text-white px-8 py-2 rounded-xl font-bold shadow-lg hover:bg-green-600">
-            {editingCategoryId ? "Update" : "Save"}
+            {editingCategoryId ? t("common.update") : t("common.save")}
           </button>
         </div>
       </form>
@@ -302,10 +304,10 @@ const CategoryForm = () => {
     {/* RIGHT SIDE: TABLE CATEGORY WITH VISUAL HIERARCHY TREE */}
     <div className="flex-1 bg-white dark:bg-[#151D2A] rounded-3xl shadow-sm border border-gray-100 dark:border-gray-800 p-8 min-h-[500px] flex flex-col justify-between transition-colors">
       <div>
-        <h2 className="text-2xl font-bold text-center text-gray-500 dark:text-gray-300 mb-10 tracking-tight">System Categories</h2>
+        <h2 className="text-2xl font-bold text-center text-gray-500 dark:text-gray-300 mb-10 tracking-tight">{t("categories.system_categories")}</h2>
         <div className="space-y-2">
           {currentMainCategories.length === 0 ? (
-            <div className="text-center text-gray-400 italic py-10 text-sm">No main categories found.</div>
+            <div className="text-center text-gray-400 italic py-10 text-sm">{t("categories.no_main_categories")}</div>
           ) : (
             currentMainCategories.map((mainCat) => {
               const subCats = categories.filter((sub) => sub.parent_id === mainCat.id);
@@ -335,7 +337,7 @@ const CategoryForm = () => {
                           )}
                         </div>
                         <span className={`text-[9px] px-2 py-0.5 font-extrabold uppercase rounded ${mainCat.type === 'income' ? 'bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400' : mainCat.type === 'transfer' ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400' : 'bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400'}`}>
-                          {mainCat.type}
+                          {mainCat.type === 'income' ? t("transactions.income") : mainCat.type === 'transfer' ? t("filter.transfer") : t("transactions.expense")}
                         </span>
                       </div>
                     </div>
@@ -362,7 +364,7 @@ const CategoryForm = () => {
 
                             <div>
                               <h4 className="font-bold text-gray-600 dark:text-gray-200 text-sm capitalize">{subCat.name}</h4>
-                              <span className="text-[8px] text-gray-400 tracking-wider uppercase font-semibold">Subcategory</span>
+                              <span className="text-[8px] text-gray-400 tracking-wider uppercase font-semibold">{t("categories.subcategory")}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-4 pr-2">
@@ -388,7 +390,7 @@ const CategoryForm = () => {
           {mainCategories.length > itemsPerPage && (
             <div className="flex items-center justify-between pt-6 mt-6 border-t border-gray-100 dark:border-gray-800">
               <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">
-                Page {currentPage} of {totalPages}
+                {t("transactions.page")} {currentPage} {t("transactions.of")} {totalPages}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -397,7 +399,7 @@ const CategoryForm = () => {
                   onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                   className="px-4 py-2 text-xs font-extrabold uppercase tracking-wider rounded-xl border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-300 bg-white dark:bg-[#1E293B] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-[#1E293B] cursor-pointer"
                 >
-                  Prev
+                  {t("categories.prev")}
                 </button>
                 <button
                   type="button"
@@ -405,7 +407,7 @@ const CategoryForm = () => {
                   onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                   className="px-4 py-2 text-xs font-extrabold uppercase tracking-wider rounded-xl bg-[#3D5AFE] text-white hover:bg-blue-700 shadow-md transition-colors disabled:opacity-40 disabled:hover:bg-[#3D5AFE] cursor-pointer"
                 >
-                  Next
+                  {t("categories.next")}
                 </button>
               </div>
             </div>

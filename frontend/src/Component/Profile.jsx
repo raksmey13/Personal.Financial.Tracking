@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FaUser, FaEnvelope, FaLock, FaSave, FaCamera, FaKey } from 'react-icons/fa';
 import { userAPI } from '../API/index';
+import { useTranslation } from 'react-i18next';
 
 const Profile = () => {
-  // 💾 Core Database Cached Snapshots (Keeps your top avatar header stable while typing)
+  const { t } = useTranslation();
+
+  // 💾 Core Database Cached Snapshots
   const [dbSnapshot, setDbSnapshot] = useState({ firstName: "", lastName: "", email: "", avatarUrl: "" });
 
   // 📝 Active Form Input States
@@ -72,9 +75,9 @@ const Profile = () => {
         email: email
       }));
 
-      setInfoMessage(`🟢 ${response.data.message || "Profile updated successfully!"}`);
+      setInfoMessage(`🟢 ${response.data.message || t("profile.info_updated_success")}`);
     } catch (error) {
-      setInfoMessage(`🔴 ${error.response?.data?.detail || "Failed to push update parameters."}`);
+      setInfoMessage(`🔴 ${error.response?.data?.detail || t("profile.info_update_failed")}`);
       console.error(error);
     }
     setTimeout(() => setInfoMessage(""), 3000);
@@ -84,7 +87,7 @@ const Profile = () => {
   const handleUpdatePassword = async (e) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
-      setPasswordMessage("🔴 New passwords do not match.");
+      setPasswordMessage(`🔴 ${t("profile.passwords_do_not_match")}`);
       return;
     }
 
@@ -93,12 +96,12 @@ const Profile = () => {
         current_password: currentPassword,
         new_password: newPassword
       });
-      setPasswordMessage(`🟢 ${response.data.message || "Access keys updated successfully!"}`);
+      setPasswordMessage(`🟢 ${response.data.message || t("profile.password_updated_success")}`);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (error) {
-      setPasswordMessage(`🔴 ${error.response?.data?.detail || "Credential modification failed."}`);
+      setPasswordMessage(`🔴 ${error.response?.data?.detail || t("profile.password_update_failed")}`);
     }
     setTimeout(() => setPasswordMessage(""), 3000);
   };
@@ -116,7 +119,7 @@ const Profile = () => {
     formData.append("file", selectedFile);
 
     try {
-      setInfoMessage("📤 Uploading profile picture to server...");
+      setInfoMessage(`📤 ${t("profile.uploading_avatar")}`);
 
       const response = await userAPI.uploadAvatar(formData);
 
@@ -126,10 +129,10 @@ const Profile = () => {
         avatarUrl: response.data.avatar_url
       }));
 
-      setInfoMessage("🟢 Profile avatar uploaded and committed cleanly!");
+      setInfoMessage(`🟢 ${t("profile.avatar_uploaded_success")}`);
     } catch (error) {
       console.error("Avatar streaming file write error:", error);
-      setInfoMessage("🔴 Upload pipeline failed. Verify network access.");
+      setInfoMessage(`🔴 ${t("profile.avatar_upload_failed")}`);
     }
     setTimeout(() => setInfoMessage(""), 4000);
   };
@@ -138,7 +141,7 @@ const Profile = () => {
     return (
       <div className="w-full min-h-screen bg-[#F8F9FD] dark:bg-[#0B0F17] py-20 flex flex-col items-center justify-center space-y-3 transition-colors">
         <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-gray-400 dark:text-gray-500 font-semibold text-xs">Pulling master profile metrics...</p>
+        <p className="text-gray-400 dark:text-gray-500 font-semibold text-xs">{t("profile.loading_metrics")}</p>
       </div>
     );
   }
@@ -174,11 +177,11 @@ const Profile = () => {
           </div>
           <div className="text-center sm:text-left space-y-1">
             <h2 className="text-xl font-black text-gray-800 dark:text-gray-100 tracking-tight">
-              {dbSnapshot.firstName || "Anonymous"} {dbSnapshot.lastName}
+              {dbSnapshot.firstName || t("profile.anonymous")} {dbSnapshot.lastName}
             </h2>
             <p className="text-xs text-gray-400 dark:text-gray-400 font-semibold">{dbSnapshot.email}</p>
             <span className="inline-block mt-2 px-3 py-1 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-bold text-[10px] tracking-wider uppercase rounded-md border border-blue-100/30 dark:border-blue-900/40">
-              Premium Ledger Tier
+              {t("profile.tier_badge")}
             </span>
           </div>
         </div>
@@ -190,9 +193,9 @@ const Profile = () => {
             <form onSubmit={handleUpdateInfo} className="space-y-4">
               <div>
                 <h3 className="text-sm font-black text-gray-800 dark:text-gray-100 tracking-tight flex items-center gap-2">
-                  <FaUser className="text-blue-500" /> Account Preferences
+                  <FaUser className="text-blue-500" /> {t("profile.account_preferences")}
                 </h3>
-                <p className="text-[11px] text-gray-400 dark:text-gray-400 font-medium">Update your profile identity handles and base credentials</p>
+                <p className="text-[11px] text-gray-400 dark:text-gray-400 font-medium">{t("profile.account_preferences_subtitle")}</p>
 
                 {infoMessage && (
                   <div className="mt-3 p-3 bg-gray-50 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-[11px] font-bold text-center rounded-2xl text-blue-600 dark:text-blue-400">
@@ -206,7 +209,7 @@ const Profile = () => {
                     <input
                       type="text"
                       required
-                      placeholder="First Name / Handle"
+                      placeholder={t("profile.first_name_placeholder")}
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
                       className="w-full pl-11 pr-4 py-2.5 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-2xl text-xs font-semibold outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"
@@ -217,7 +220,7 @@ const Profile = () => {
                     <span className="absolute left-4 top-3.5 text-gray-400 dark:text-gray-500 text-xs"><FaUser /></span>
                     <input
                       type="text"
-                      placeholder="Last Name (Optional)"
+                      placeholder={t("profile.last_name_placeholder")}
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
                       className="w-full pl-11 pr-4 py-2.5 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-2xl text-xs font-semibold outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"
@@ -229,7 +232,7 @@ const Profile = () => {
                     <input
                       type="email"
                       required
-                      placeholder="Email Address"
+                      placeholder={t("auth.identifier_placeholder")}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-11 pr-4 py-2.5 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-2xl text-xs font-semibold outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"
@@ -242,7 +245,7 @@ const Profile = () => {
                 type="submit"
                 className="w-full mt-4 py-2.5 bg-blue-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-blue-500/10 hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer border-none"
               >
-                <FaSave /> Save Changes
+                <FaSave /> {t("common.save_changes")}
               </button>
             </form>
           </div>
@@ -250,9 +253,9 @@ const Profile = () => {
           {/* Card Block 2: Security & Password Gateway Change */}
           <div className="bg-white dark:bg-[#151D2A] p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-800 space-y-4 transition-colors">
             <h3 className="text-sm font-black text-gray-800 dark:text-gray-100 tracking-tight flex items-center gap-2">
-              <FaKey className="text-blue-500" /> Security Gateway
+              <FaKey className="text-blue-500" /> {t("profile.security_gateway")}
             </h3>
-            <p className="text-[11px] text-gray-400 dark:text-gray-400 font-medium">Change your credentials securely to block unauthorized entries</p>
+            <p className="text-[11px] text-gray-400 dark:text-gray-400 font-medium">{t("profile.security_gateway_subtitle")}</p>
 
             {passwordMessage && (
               <div className="p-3 bg-gray-50 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-[11px] font-bold text-center rounded-2xl text-blue-600 dark:text-blue-400">
@@ -266,7 +269,7 @@ const Profile = () => {
                 <input
                   type="password"
                   required
-                  placeholder="Current Security Password"
+                  placeholder={t("profile.current_password_placeholder")}
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   className="w-full pl-11 pr-4 py-2 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-2xl text-xs font-semibold outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all"
@@ -278,7 +281,7 @@ const Profile = () => {
                 <input
                   type="password"
                   required
-                  placeholder="New Secure Password"
+                  placeholder={t("profile.new_password_placeholder")}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   className="w-full pl-11 pr-4 py-2 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-2xl text-xs font-semibold outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all"
@@ -290,7 +293,7 @@ const Profile = () => {
                 <input
                   type="password"
                   required
-                  placeholder="Confirm New Password"
+                  placeholder={t("profile.confirm_password_placeholder")}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="w-full pl-11 pr-4 py-2 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-2xl text-xs font-semibold outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all"
@@ -301,7 +304,7 @@ const Profile = () => {
                 type="submit"
                 className="w-full mt-2 py-2.5 bg-gray-800 dark:bg-gray-700 text-white rounded-2xl font-bold text-xs hover:bg-gray-900 dark:hover:bg-gray-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer border-none"
               >
-                <FaLock /> Update Access Keys
+                <FaLock /> {t("profile.btn_update_access_keys")}
               </button>
             </form>
           </div>

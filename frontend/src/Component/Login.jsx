@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { FaEnvelope, FaLock, FaSignInAlt, FaEye, FaEyeSlash } from 'react-icons/fa';
 import { userAPI } from '../API/index';
 import ForgotPasswordModal from './ForgotPasswordModal';
+import { useTranslation } from 'react-i18next';
 
 const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
+  const { t } = useTranslation();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -25,7 +27,7 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
       const token = response.data?.access_token || response.access_token;
 
       if (!token) {
-        throw new Error("No authentication token returned from server.");
+        throw new Error(t("auth.no_token_returned"));
       }
 
       localStorage.setItem("token", token);
@@ -37,7 +39,7 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
       });
       const userData = await profileRes.json();
 
-      alert("Login successful! Welcome To PFTrack.");
+      alert(t("auth.login_success_alert"));
 
       // Pass both to App.jsx
       if (onLoginSuccess) {
@@ -49,7 +51,7 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
       setError(
         err.response?.data?.detail ||
         err.message ||
-        "Invalid login credentials. Please verify data entry."
+        t("auth.invalid_credentials_error")
       );
     } finally {
       setLoading(false);
@@ -62,8 +64,8 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
 
         {/* Header Block */}
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-black text-gray-800 tracking-tight">Welcome to PFTrack</h2>
-          <p className="text-xs text-gray-400 font-semibold">Enter your account details to access your secure ledger metrics</p>
+          <h2 className="text-2xl font-black text-gray-800 tracking-tight">{t("auth.welcome_title")}</h2>
+          <p className="text-xs text-gray-400 font-semibold">{t("auth.welcome_subtitle")}</p>
         </div>
 
         {error && (
@@ -78,7 +80,7 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
             <input
               type="text"
               required
-              placeholder="Email Address or Username"
+              placeholder={t("auth.identifier_placeholder")}
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
@@ -91,7 +93,7 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
               <input
                 type={showPassword ? "text" : "password"}
                 required
-                placeholder="Account Access Password"
+                placeholder={t("auth.password_placeholder")}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full pl-11 pr-11 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
@@ -111,7 +113,7 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
                 onClick={() => setIsForgotOpen(true)}
                 className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
               >
-                Forgot Password?
+                {t("auth.forgot_password")}
               </button>
             </div>
           </div>
@@ -122,18 +124,18 @@ const Login = ({ onSwitchToSignup, onLoginSuccess }) => {
             className="w-full py-3 bg-blue-600 text-white rounded-2xl font-bold text-xs tracking-wide shadow-lg shadow-blue-500/10 hover:bg-blue-700 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
           >
             <FaSignInAlt />
-            {loading ? "Authenticating Session..." : "Sign In to Dashboard"}
+            {loading ? t("auth.authenticating") : t("auth.sign_in_btn")}
           </button>
         </form>
 
         <div className="text-center pt-2 border-t border-gray-50 text-xs font-semibold text-gray-400">
-          New to the platform?{" "}
+          {t("auth.new_to_platform")}{" "}
           <button
             type="button"
             onClick={onSwitchToSignup}
             className="text-blue-600 font-bold hover:underline cursor-pointer"
           >
-            Create an Account
+            {t("auth.create_account")}
           </button>
         </div>
 

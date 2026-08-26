@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { FaEnvelope, FaPaperPlane, FaTimes, FaCheckCircle } from 'react-icons/fa';
 import { userAPI } from '../API/index';
+import { useTranslation } from 'react-i18next';
 
 const ForgotPasswordModal = ({ isOpen, onClose }) => {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -27,7 +29,7 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
     } catch (err) {
       setError(
         err.response?.data?.detail ||
-        "Failed to request password reset. Please check the email address."
+        t("auth.reset_failed_error")
       );
     } finally {
       setLoading(false);
@@ -49,7 +51,7 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
         <button
           type="button"
           onClick={handleClose}
-          className="absolute top-5 right-5 text-gray-400 hover:text-gray-600 transition-colors"
+          className="absolute top-5 right-5 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
         >
           <FaTimes className="text-sm" />
         </button>
@@ -57,9 +59,9 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
         {!isSubmitted ? (
           <>
             <div className="text-center space-y-1.5">
-              <h3 className="text-xl font-extrabold text-gray-800 tracking-tight">Reset Password</h3>
+              <h3 className="text-xl font-extrabold text-gray-800 tracking-tight">{t("auth.reset_password_title")}</h3>
               <p className="text-xs text-gray-400 font-medium leading-relaxed">
-                Enter your account email below to receive verification instructions.
+                {t("auth.reset_password_subtitle")}
               </p>
             </div>
 
@@ -75,7 +77,7 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
                 <input
                   type="email"
                   required
-                  placeholder="Enter registered email address"
+                  placeholder={t("auth.registered_email_placeholder")}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 transition-all duration-200"
@@ -88,7 +90,7 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
                 className="w-full py-3 bg-blue-600 text-white rounded-2xl font-bold text-xs tracking-wide shadow-lg shadow-blue-500/10 hover:bg-blue-700 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <FaPaperPlane className="text-xs" />
-                {loading ? "Sending Link..." : "Send Recovery Link"}
+                {loading ? t("auth.sending_link") : t("auth.send_recovery_link")}
               </button>
             </form>
           </>
@@ -98,9 +100,9 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
               <FaCheckCircle />
             </div>
             <div className="space-y-1">
-              <h4 className="text-base font-bold text-gray-800">Reset Link Dispatched</h4>
+              <h4 className="text-base font-bold text-gray-800">{t("auth.reset_link_dispatched")}</h4>
               <p className="text-xs text-gray-400 font-medium px-2">
-                If an account exists for <span className="font-bold text-gray-600">{email}</span>, password reset instructions have been transmitted.
+                {t("auth.reset_instructions_sent")} <span className="font-bold text-gray-600">{email}</span>.
               </p>
             </div>
             <button
@@ -108,7 +110,7 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
               onClick={handleClose}
               className="w-full py-2.5 bg-gray-100 text-gray-700 rounded-2xl font-bold text-xs hover:bg-gray-200 transition-colors cursor-pointer"
             >
-              Return to Login
+              {t("auth.return_to_login")}
             </button>
           </div>
         )}

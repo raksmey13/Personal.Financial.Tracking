@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { FaPlus, FaChevronLeft, FaChevronRight, FaRegTrashAlt, FaFolderOpen, FaHistory, FaCheckSquare, FaSquare, FaDollarSign, FaInfoCircle, FaTags, FaChartPie, FaRegCalendarCheck, FaPercentage, FaWallet } from 'react-icons/fa';
 import API, { budgetAPI, categoryAPI } from "../API/index";
+import { useTranslation } from "react-i18next";
 
 const BudgetPage = ({ categories: propCategories = [] }) => {
   const [budgets, setBudgets] = useState([]);
   const [categories, setCategories] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const { t } = useTranslation();
 
   // 🟢 Helper Function for Multi-Currency Formatting
   const formatMoney = (val, currency = "USD") => {
@@ -74,7 +76,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
 
   // --- CRUD: DELETE (Soft Deactivate) ---
   const handleDeleteBudget = async (id, isStrategy = false) => {
-    if (window.confirm("Are you sure you want to deactivate this rule?")) {
+    if (window.confirm(t("budgets.confirm_deactivate"))) {
       try {
         if (isStrategy) {
           const response = await API.delete('/budgets/strategy/');
@@ -90,7 +92,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
         }
       } catch (error) {
         console.error("Axios execution erasure crash:", error);
-        alert("Failed to delete. Please check your connection.");
+        alert(t("budgets.delete_failed"));
       }
     }
   };
@@ -109,7 +111,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
   const handleAddBucket = () => {
     setFormData({
       ...formData,
-      buckets: [...formData.buckets, { bucket_name: "New Bucket", percentage: "", category_ids: [] }]
+      buckets: [...formData.buckets, { bucket_name: t("budgets.new_bucket"), percentage: "", category_ids: [] }]
     });
   };
 
@@ -139,7 +141,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
     // 🟢 ROUTE A: MASTER ALLOCATION STRATEGY
     if (formData.strategy_type === "master_allocation") {
       if (totalStrategyPercentage !== 100) {
-        alert(`Allocation error: Total percentages must add up to exactly 100%. Current total is ${totalStrategyPercentage}%.`);
+        alert(`${t("budgets.allocation_error")} ${totalStrategyPercentage}%.`);
         return;
       }
 
@@ -160,18 +162,18 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
         }
       } catch (error) {
         console.error("Failed to inject tracking rule configuration:", error);
-        alert("Failed to save strategy. Please check backend connection.");
+        alert(t("budgets.save_failed"));
       }
       return;
     }
 
     // 🟢 ROUTE B: STANDARD SPENDING CAP / FIXED LIMIT
     if (!formData.limit_amount || parseFloat(formData.limit_amount) <= 0) {
-      alert("Please enter an amount greater than 0.");
+      alert(t("budgets.alert_amount_greater_zero"));
       return;
     }
     if (formData.selected_category_ids.length === 0) {
-      alert("Please select at least one category to track.");
+      alert(t("budgets.alert_select_category"));
       return;
     }
 
@@ -272,7 +274,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
 
   const getBoundCategoryNames = (item) => {
     const targetIds = item.category_ids ? item.category_ids.map(id => String(id)) : [];
-    if (targetIds.length === 0) return "Global Strategy Rules";
+    if (targetIds.length === 0) return t("budgets.global_strategy_rules");
     return safeCategories
       .filter(c => targetIds.includes(String(c.id)))
       .map(c => c.name)
@@ -291,7 +293,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
       <button type="button" className="p-2.5 bg-gray-50 dark:bg-[#1E293B] hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-all border border-gray-200 dark:border-gray-700">
         <FaChevronLeft className="text-gray-600 dark:text-gray-300 text-xs" />
       </button>
-      <h2 className="font-black text-sm tracking-widest text-gray-700 dark:text-gray-200 uppercase">Active Budgets & Allocations</h2>
+      <h2 className="font-black text-sm tracking-widest text-gray-700 dark:text-gray-200 uppercase">{t("budgets.title")}</h2>
       <button type="button" className="p-2.5 bg-gray-50 dark:bg-[#1E293B] hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-all border border-gray-200 dark:border-gray-700">
         <FaChevronRight className="text-gray-600 dark:text-gray-300 text-xs" />
       </button>
@@ -301,7 +303,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
     <div className="space-y-6">
       {safeBudgets.length === 0 ? (
         <div className="text-center py-20 bg-white dark:bg-[#151D2A] rounded-3xl border border-dashed border-gray-200 dark:border-gray-800 text-gray-400 font-bold text-sm tracking-wide">
-          No active allocations found. Click the green button below to create one!
+          {t("budgets.no_budgets")}
         </div>
       ) : safeBudgets.map((item) => {
 
@@ -317,12 +319,12 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
                   <div className="flex items-center gap-3">
                     <h3 className="text-gray-800 dark:text-gray-100 text-lg font-black tracking-wide capitalize">{item.name}</h3>
                     <span className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
-                      <FaPercentage size={8} /> Pro Allocation
+                      <FaPercentage size={8} /> {t("budgets.pro_allocation")}
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-400 font-bold mt-1 flex items-center gap-1 flex-wrap">
                     <FaWallet size={10} className="text-gray-300 dark:text-gray-500" />
-                    TOTAL COMBINED MONTHLY INCOME POOL:
+                    {t("budgets.income_pool_label")}:
                     <span className="text-emerald-600 dark:text-emerald-400 font-black tracking-wider ml-1">
                       {formatMoney(incomePoolUSD, "USD")} <span className="text-gray-400">({formatMoney(incomePoolKHR, "KHR")})</span>
                     </span>
@@ -353,7 +355,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
                           <FaChartPie size={10} /> {bucket.bucket_name} ({pct}%)
                         </span>
                         <span className="text-gray-500 dark:text-gray-400 font-mono text-[11px]">
-                          Spent: <strong className="text-gray-800 dark:text-gray-200">{formatMoney(spentUSD, "USD")}</strong> / Cap: {formatMoney(capUSD, "USD")} <span className="text-gray-400">({formatMoney(capKHR, "KHR")})</span>
+                          {t("budgets.spent")}: <strong className="text-gray-800 dark:text-gray-200">{formatMoney(spentUSD, "USD")}</strong> / {t("budgets.cap")}: {formatMoney(capUSD, "USD")} <span className="text-gray-400">({formatMoney(capKHR, "KHR")})</span>
                         </span>
                       </div>
 
@@ -368,7 +370,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
 
                       {bucket.category_ids && bucket.category_ids.length > 0 && (
                         <div className="text-[9px] text-gray-400 font-medium mt-1 truncate">
-                          Includes: {safeCategories.filter(c => bucket.category_ids.includes(c.id)).map(c => c.name).join(", ")}
+                          {t("budgets.includes")}: {safeCategories.filter(c => bucket.category_ids.includes(c.id)).map(c => c.name).join(", ")}
                         </div>
                       )}
                     </div>
@@ -409,8 +411,8 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-3">
                   <h3 className="text-gray-800 dark:text-gray-100 text-lg font-black tracking-wide capitalize">{item.name}</h3>
-                  {item.is_group_budget && <span className="bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md flex items-center gap-1"><FaFolderOpen /> Group Envelope</span>}
-                  {item.is_rollover && <span className="bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md flex items-center gap-1"><FaHistory /> Rollover</span>}
+                  {item.is_group_budget && <span className="bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md flex items-center gap-1"><FaFolderOpen /> {t("budgets.group_envelope")}</span>}
+                  {item.is_rollover && <span className="bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md flex items-center gap-1"><FaHistory /> {t("budgets.rollover")}</span>}
                   <span className="text-[10px] bg-gray-100 dark:bg-[#1E293B] text-gray-700 dark:text-gray-300 font-extrabold px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 uppercase">
                     {bCurrency}
                   </span>
@@ -418,7 +420,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
 
                 <p className="text-[11px] text-gray-400 font-bold flex items-center gap-1">
                   <FaTags size={10} className="text-gray-300 dark:text-gray-500" />
-                  TRACKING: <span className="text-gray-600 dark:text-gray-300 font-medium capitalize bg-gray-50 dark:bg-[#1E293B] px-1.5 py-0.5 rounded-md border border-gray-100/60 dark:border-gray-700/60">{getBoundCategoryNames(item)}</span>
+                  {t("budgets.tracking")}: <span className="text-gray-600 dark:text-gray-300 font-medium capitalize bg-gray-50 dark:bg-[#1E293B] px-1.5 py-0.5 rounded-md border border-gray-100/60 dark:border-gray-700/60">{getBoundCategoryNames(item)}</span>
                 </p>
               </div>
               <div className="flex gap-4 text-gray-400 dark:text-gray-500 text-base">
@@ -431,9 +433,9 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
 
               <div className="flex-1 space-y-2">
                 <div className="flex justify-between text-[11px] font-bold text-gray-400 dark:text-gray-400 px-0.5 tracking-wider">
-                  <span>START: {item.start || "—"}</span>
-                  <span className={`${rawProgress >= 100 ? 'text-red-500 font-black' : 'text-gray-700 dark:text-gray-200 font-extrabold'}`}>{rawProgress}% CONSUMED</span>
-                  <span>DUE DATE: {item.end || "—"}</span>
+                  <span>{t("budgets.start")}: {item.start || "—"}</span>
+                  <span className={`${rawProgress >= 100 ? 'text-red-500 font-black' : 'text-gray-700 dark:text-gray-200 font-extrabold'}`}>{rawProgress}% {t("budgets.consumed")}</span>
+                  <span>{t("budgets.due_date")}: {item.end || "—"}</span>
                 </div>
 
                 <div className="h-4 bg-gray-100 dark:bg-[#1E293B] rounded-full flex overflow-hidden relative border border-gray-200/40 dark:border-gray-700/40 shadow-inner">
@@ -441,12 +443,12 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
                 </div>
 
                 <div className="flex justify-between text-xs font-bold text-gray-500 dark:text-gray-400 pt-1">
-                  <span>Spent: <span className="text-gray-800 dark:text-gray-200 font-black">{formatMoney(rawSpent, bCurrency)}</span></span>
-                  <span>{item.strategy_type === "fixed_allocation" ? "Committed Target:" : "Budget Limit:"} <span className="text-gray-800 dark:text-gray-200 font-black">{formatMoney(rawTotal, bCurrency)}</span></span>
+                  <span>{t("budgets.spent")}: <span className="text-gray-800 dark:text-gray-200 font-black">{formatMoney(rawSpent, bCurrency)}</span></span>
+                  <span>{item.strategy_type === "fixed_allocation" ? t("budgets.committed_target") : t("budgets.budget_limit")} <span className="text-gray-800 dark:text-gray-200 font-black">{formatMoney(rawTotal, bCurrency)}</span></span>
                 </div>
 
                 <div className="text-xs text-gray-400 font-semibold pt-1">
-                  Remaining Buffer: <span className={`font-black font-mono ml-1 text-sm ${remainingBuffer < 0 ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>{formatMoney(remainingBuffer, bCurrency)}</span>
+                  {t("budgets.remaining_buffer")}: <span className={`font-black font-mono ml-1 text-sm ${remainingBuffer < 0 ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>{formatMoney(remainingBuffer, bCurrency)}</span>
                 </div>
               </div>
             </div>
@@ -473,35 +475,35 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
 
             <div className="text-center border-b border-gray-100 dark:border-gray-800 pb-3">
               <h2 className="text-lg font-black tracking-wide text-gray-800 dark:text-gray-100 uppercase">
-                Setup Capital Strategy
+                {t("budgets.setup_capital_strategy")}
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">Choose between flexible spending limits or global allocation percentages</p>
+              <p className="text-xs text-gray-400 mt-0.5">{t("budgets.setup_subtitle")}</p>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="block text-xs font-black text-gray-400 uppercase tracking-wider">A. Select Strategy Mode Type</label>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-wider">{t("budgets.select_strategy_mode")}</label>
                 <div className="grid grid-cols-3 gap-1 bg-gray-100 dark:bg-[#1E293B] p-1 rounded-xl border border-gray-200 dark:border-gray-700">
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, strategy_type: "spending_cap", is_group_budget: false, selected_category_ids: [], name: "" })}
                     className={`py-2 text-[10px] font-black rounded-lg transition-all flex flex-col items-center justify-center gap-1 ${formData.strategy_type === "spending_cap" ? "bg-[#3D5AFE] text-white shadow-md" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
                   >
-                    <FaChartPie /> Cap
+                    <FaChartPie /> {t("budgets.cap")}
                   </button>
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, strategy_type: "fixed_allocation", is_group_budget: false, selected_category_ids: [], name: "" })}
                     className={`py-2 text-[10px] font-black rounded-lg transition-all flex flex-col items-center justify-center gap-1 ${formData.strategy_type === "fixed_allocation" ? "bg-[#3D5AFE] text-white shadow-md" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
                   >
-                    <FaRegCalendarCheck /> Fixed
+                    <FaRegCalendarCheck /> {t("budgets.fixed")}
                   </button>
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, strategy_type: "master_allocation", is_group_budget: true, selected_category_ids: [], name: "Master Allocation Strategy" })}
                     className={`py-2 text-[10px] font-black rounded-lg transition-all flex flex-col items-center justify-center gap-1 ${formData.strategy_type === "master_allocation" ? "bg-[#3D5AFE] text-white shadow-md" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
                   >
-                    <FaPercentage /> Global Alloc.
+                    <FaPercentage /> {t("budgets.global_alloc")}
                   </button>
                 </div>
               </div>
@@ -510,13 +512,13 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
               {formData.strategy_type === "master_allocation" && (
                 <div className="space-y-3 bg-blue-50/40 dark:bg-blue-950/20 p-3.5 rounded-2xl border border-blue-100/70 dark:border-blue-900/40 animate-in slide-in-from-top-2 duration-150">
                   <div className="flex items-center justify-between">
-                    <label className="block text-xs font-black text-blue-900 dark:text-blue-300 uppercase tracking-wider">Custom Allocation Buckets</label>
+                    <label className="block text-xs font-black text-blue-900 dark:text-blue-300 uppercase tracking-wider">{t("budgets.custom_buckets")}</label>
                     <button
                       type="button"
                       onClick={handleAddBucket}
                       className="bg-white dark:bg-[#1E293B] border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-[10px] font-bold px-2 py-1 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors shadow-sm"
                     >
-                      + Add Bucket
+                      + {t("budgets.add_bucket")}
                     </button>
                   </div>
 
@@ -528,7 +530,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
                             type="text"
                             value={bucket.bucket_name}
                             onChange={(e) => handleBucketChange(index, 'bucket_name', e.target.value)}
-                            placeholder="e.g. Needs, Debt"
+                            placeholder={t("budgets.bucket_name_placeholder")}
                             className="flex-1 w-full bg-gray-50 dark:bg-[#151D2A] text-gray-800 dark:text-gray-100 border border-gray-100 dark:border-gray-700 p-2 text-xs font-bold rounded-lg outline-none focus:border-blue-400"
                             required
                           />
@@ -557,7 +559,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
                         {/* Category Selection Pills for this bucket */}
                         <div className="pt-1 border-t border-gray-100 dark:border-gray-700 mt-1">
                           <label className="text-[9px] font-bold text-gray-400 uppercase mb-1.5 block">
-                            Assigned Categories
+                            {t("budgets.assigned_categories")}
                           </label>
                           <div className="flex flex-wrap gap-1.5">
                             {safeCategories
@@ -588,7 +590,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-blue-100/60 dark:border-blue-900/40 mt-2 px-1">
-                    <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase">Total Allocation</span>
+                    <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase">{t("budgets.total_allocation")}</span>
                     <span className={`text-sm font-black ${totalStrategyPercentage === 100 ? 'text-green-500' : 'text-red-500 animate-pulse'}`}>
                       {totalStrategyPercentage}%
                     </span>
@@ -599,21 +601,21 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
               {/* STANDARD CONFIGURATIONS */}
               {formData.strategy_type === "spending_cap" && (
                 <div className="space-y-1.5 animate-in fade-in duration-100">
-                  <label className="block text-xs font-black text-gray-400 uppercase tracking-wider">1. Budget Scope Strategy</label>
+                  <label className="block text-xs font-black text-gray-400 uppercase tracking-wider">{t("budgets.scope_strategy")}</label>
                   <div className="grid grid-cols-2 gap-2 bg-gray-100 dark:bg-[#1E293B] p-1 rounded-xl">
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, is_group_budget: false, selected_category_ids: [], name: "" })}
                       className={`py-2 text-xs font-bold rounded-lg transition-all ${!formData.is_group_budget ? "bg-white dark:bg-[#151D2A] text-gray-800 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
                     >
-                      Single Category
+                      {t("budgets.single_category")}
                     </button>
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, is_group_budget: true, selected_category_ids: [] })}
                       className={`py-2 text-xs font-bold rounded-lg transition-all ${formData.is_group_budget ? "bg-white dark:bg-[#151D2A] text-gray-800 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
                     >
-                      Group Umbrella
+                      {t("budgets.group_umbrella")}
                     </button>
                   </div>
                 </div>
@@ -621,10 +623,10 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
 
               {formData.is_group_budget && formData.strategy_type === "spending_cap" && (
                 <div className="animate-in slide-in-from-top-2 duration-150">
-                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Group Collection Name</label>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">{t("budgets.group_collection_name")}</label>
                   <input
                     type="text"
-                    placeholder="e.g., All Food & Dining"
+                    placeholder={t("budgets.group_name_placeholder")}
                     value={formData.name}
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
                     className="w-full p-2.5 text-sm border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1E293B] text-gray-800 dark:text-gray-100 rounded-xl outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-green-400 font-semibold transition-colors"
@@ -636,13 +638,13 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
               {formData.strategy_type !== "master_allocation" && (
                 <div className="space-y-1">
                   <label className="block text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    {formData.strategy_type === "fixed_allocation" ? "2. Choose Fixed Commitment Target" : formData.is_group_budget ? "2. Choose Categories for Group" : "2. Choose Category to Track"}
+                    {formData.strategy_type === "fixed_allocation" ? t("budgets.choose_fixed_target") : formData.is_group_budget ? t("budgets.choose_group_categories") : t("budgets.choose_single_category")}
                   </label>
 
                   <div className="border border-gray-200 dark:border-gray-700 rounded-2xl p-3 max-h-[140px] overflow-y-auto space-y-1.5 bg-gray-50/50 dark:bg-[#1E293B]/50 shadow-inner custom-scrollbar">
                     {safeCategories.length === 0 ? (
                       <div className="text-xs text-gray-400 italic py-4 text-center flex flex-col items-center gap-1 bg-white dark:bg-[#151D2A] rounded-xl border border-gray-100 dark:border-gray-800">
-                        <FaInfoCircle size={14} /> Fetching network categories...
+                        <FaInfoCircle size={14} /> {t("budgets.fetching_categories")}
                       </div>
                     ) : (
                       (() => {
@@ -703,7 +705,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
               {formData.strategy_type !== "master_allocation" && (
                 <div className="space-y-1 animate-in fade-in duration-100">
                   <label className="block text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    {formData.strategy_type === "fixed_allocation" ? "3. Committed Allocation Amount" : "3. Spending Cap Limit Amount"}
+                    {formData.strategy_type === "fixed_allocation" ? t("budgets.committed_amount") : t("budgets.cap_amount")}
                   </label>
                   <div className="flex gap-2">
                     <select
@@ -738,8 +740,8 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
                   <div className="flex items-start gap-2.5">
                     <FaHistory className="text-purple-500 mt-0.5" size={14} />
                     <div>
-                      <label className="block text-xs font-bold text-purple-900 dark:text-purple-300">Carryover Leftover Savings</label>
-                      <p className="text-[10px] text-purple-600/70 dark:text-purple-400/70 max-w-[240px]">Unspent money rolls forward into next month's pocket pool.</p>
+                      <label className="block text-xs font-bold text-purple-900 dark:text-purple-300">{t("budgets.carryover_savings")}</label>
+                      <p className="text-[10px] text-purple-600/70 dark:text-purple-400/70 max-w-[240px]">{t("budgets.carryover_subtitle")}</p>
                     </div>
                   </div>
                   <input
@@ -760,14 +762,14 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
               onClick={handleCloseModal}
               className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-all p-2"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={formData.strategy_type === "master_allocation" && totalStrategyPercentage !== 100}
               className="bg-[#4caf50] disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl hover:bg-green-600 transition-all shadow-md cursor-pointer"
             >
-              Save Configuration
+              {t("common.save_configuration")}
             </button>
           </div>
         </form>
