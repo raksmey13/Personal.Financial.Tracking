@@ -43,10 +43,10 @@ def create_category(
         if parent.parent_id is not None:
             raise HTTPException(status_code=400, detail="Nested subcategories beyond 1 level are not permitted")
 
-    # 🔒 CRITICAL ENGINE SAFEGUARD: Intercept write payloads for 50/30/20 sweep targets
+    # 🔒 CRITICAL ENGINE SAFEGUARD: Intercept write payloads for 50/30/20 sweep and system targets
     final_type = payload.type
     name_lower = payload.name.strip().lower()
-    if name_lower == "sweep saving" or "sweep" in name_lower:
+    if "sweep" in name_lower or "opening balance" in name_lower:
         final_type = "transfer"  # Forces the budget engine's double-entry logic to work flawlessly
 
     try:
@@ -86,7 +86,7 @@ def read_categories(
     # 🔒 CRITICAL ENGINE SAFEGUARD: Normalize type strictly in memory before rendering to UI
     for cat in categories:
         name_lower = cat.name.strip().lower()
-        if "sweep" in name_lower:
+        if "sweep" in name_lower or "opening balance" in name_lower:
             cat.type = "transfer"
         elif "credit card payment" in name_lower or "loan repayment" in name_lower:
             cat.type = "transfer"
@@ -132,10 +132,10 @@ def update_category(
         if not parent:
             raise HTTPException(status_code=404, detail="Parent category not found")
 
-    # 🔒 CRITICAL ENGINE SAFEGUARD: Re-evaluate sweep parameters upon update
+    # 🔒 CRITICAL ENGINE SAFEGUARD: Re-evaluate sweep and system parameters upon update
     final_type = payload.type
     name_lower = payload.name.strip().lower()
-    if name_lower == "sweep saving" or "sweep" in name_lower:
+    if "sweep" in name_lower or "opening balance" in name_lower:
         final_type = "transfer"
 
     try:
