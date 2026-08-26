@@ -1,5 +1,6 @@
 import csv
 import io
+import os
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, status, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional
@@ -20,10 +21,28 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 from .auth import get_current_user
 
 router = APIRouter(prefix="/export-import", tags=["Export & Import"])
+
+# Register Khmer Font for PDF generation if available, fallback gracefully
+KHMER_FONT_NAME = "Helvetica"
+possible_khmer_fonts = [
+    "fonts/NotoSansKhmer-Regular.ttf",
+    "backend/fonts/NotoSansKhmer-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansKhmer-Regular.ttf"
+]
+for font_path in possible_khmer_fonts:
+    if os.path.exists(font_path):
+        try:
+            pdfmetrics.registerFont(TTFont('NotoSansKhmer', font_path))
+            KHMER_FONT_NAME = 'NotoSansKhmer'
+            break
+        except Exception:
+            pass
 
 
 # =========================================================
@@ -48,32 +67,9 @@ def download_excel_template():
         )
         align_center = Alignment(horizontal="center", vertical="center")
 
-        # SHEET 1: Instructions & Field Rules
-        ws_info = wb.active
-        ws_info.title = "Instructions"
-        ws_info.views.sheetView[0].showGridLines = True
-
-        ws_info.append(["Field Name", "Required?", "Allowed Format / Values", "Description & Examples"])
-        instructions_data = [
-            ["date", "Yes", "YYYY-MM-DD (e.g. 2026-08-15)", "The date when the transaction occurred."],
-            ["account_name", "Yes", "Text (e.g. ABA USD, Cash)",
-             "Must match an existing active account in your ledger."],
-            ["category_name", "Yes", "Text (e.g. Food & Dining, Salary)", "Category or subcategory title."],
-            ["type", "Yes", "income | expense | transfer", "Classification of cash flow."],
-            ["amount", "Yes", "Numeric (e.g. 15.50 or 6000)", "Amount in native account currency."],
-            ["description", "No", "Text", "Optional notes or merchant description."]
-        ]
-
-        for row in instructions_data:
-            ws_info.append(row)
-
-        for cell in ws_info[1]:
-            cell.font = header_font
-            cell.fill = info_header_fill
-            cell.alignment = align_center
-
-        # SHEET 2: Transactions Data Template
-        ws_tx = wb.create_sheet(title="Transactions")
+        # SHEET 1: Data Entry Template (First Tab for Easy Access)
+        ws_tx = wb.active
+        ws_tx.title = "Transactions"
         ws_tx.views.sheetView[0].showGridLines = True
 
         headers = ["date", "account_name", "category_name", "type", "amount", "description"]
@@ -98,8 +94,30 @@ def download_excel_template():
         ws_tx.add_data_validation(dv_type)
         dv_type.add("D2:D1000")
 
+        # SHEET 2: Instructions & Field Rules
+        ws_info = wb.create_sheet(title="Instructions")
+        ws_info.views.sheetView[0].showGridLines = True
+
+        ws_info.append(["Field Name", "Required?", "Allowed Format / Values", "Description & Examples"])
+        instructions_data = [
+            ["date", "Yes", "YYYY-MM-DD (e.g. 2026-08-15)", "The date when the transaction occurred."],
+            ["account_name", "Yes", "Text (e.g. ABA USD, Cash)", "Must match an existing active account in your ledger."],
+            ["category_name", "Yes", "Text (e.g. Food & Dining, Salary)", "Category or subcategory title."],
+            ["type", "Yes", "income | expense | transfer", "Classification of cash flow."],
+            ["amount", "Yes", "Numeric (e.g. 15.50 or 6000)", "Amount in native account currency."],
+            ["description", "No", "Text", "Optional notes or merchant description."]
+        ]
+
+        for row in instructions_data:
+            ws_info.append(row)
+
+        for cell in ws_info[1]:
+            cell.font = header_font
+            cell.fill = info_header_fill
+            cell.alignment = align_center
+
         # Apply Width Auto-fitting and Borders
-        for sheet in [ws_info, ws_tx]:
+        for sheet in [ws_tx, ws_info]:
             for col in sheet.columns:
                 max_len = max(len(str(cell.value or "")) for cell in col)
                 col_letter = get_column_letter(col[0].column)
@@ -236,7 +254,6 @@ def export_pdf(
     """Generates and streams a formatted PDF report matching current_user context."""
     statement = select(Transaction).where(Transaction.user_id == current_user.id)
 
-    # 🟢 FIXED: Handle period filtering robustly
     if period and period.isdigit():
         statement = statement.where(extract('year', Transaction.transaction_date) == int(period))
 
@@ -275,6 +292,7 @@ def export_pdf(
         parent=styles['Heading1'],
         fontSize=18,
         leading=22,
+        fontName='Helvetica-Bold',
         textColor=colors.HexColor('#1E293B'),
         spaceAfter=12
     )
@@ -283,6 +301,7 @@ def export_pdf(
         parent=styles['Normal'],
         fontSize=8,
         leading=10,
+        fontName=KHMER_FONT_NAME if KHMER_FONT_NAME != 'Helvetica' else 'Helvetica',
         textColor=colors.HexColor('#1E293B')
     )
     cell_header_style = ParagraphStyle(
@@ -308,11 +327,20 @@ def export_pdf(
         curr = str(account.currency if account else "USD").strip().upper()
         cat_name = category.name if category else "Uncategorized"
 
+        # Sanitize Khmer text & currency symbol to prevent PDF font crashes ("tofu" blocks)
+        raw_desc = tx.description or ""
+        if KHMER_FONT_NAME == "Helvetica":
+            # Strip non-latin characters and replace ៛ with KHR if custom font isn't loaded
+            raw_desc = "".join([c for c in raw_desc if ord(c) < 128])
+            symbol = " KHR" if curr == "KHR" else "$"
+        else:
+            symbol = "៛" if curr == "KHR" else "$"
+
         raw_amount = abs(tx.amount)
         if curr == "KHR":
-            symbol_fmt = f"{raw_amount:,.0f}៛"
+            symbol_fmt = f"{raw_amount:,.0f}{symbol}"
         else:
-            symbol_fmt = f"${raw_amount:,.2f}"
+            symbol_fmt = f"{symbol}{raw_amount:,.2f}"
 
         formatted_amount = f"-{symbol_fmt}" if tx.type.lower() == "expense" else f"+{symbol_fmt}"
 
@@ -322,7 +350,7 @@ def export_pdf(
             Paragraph(cat_name, cell_style),
             Paragraph(tx.type.capitalize(), cell_style),
             Paragraph(formatted_amount, cell_style),
-            Paragraph(tx.description or "", cell_style)
+            Paragraph(raw_desc, cell_style)
         ])
 
     col_widths = [65, 85, 95, 55, 75, 165]
