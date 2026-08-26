@@ -56,6 +56,16 @@ class ParsedTransactionResult(BaseModel):
     confidence: float
     summary_note: str
 
+class ParsedTransactionResult(BaseModel):
+    clean_merchant: Optional[str] = "UNKNOWN MERCHANT"
+    amount: float = 0.0
+    currency: str = "USD"
+    suggested_category_name: Optional[str] = "General"
+    transaction_type: str = "expense"
+    transaction_date: Optional[str] = None
+    confidence: Optional[float] = 1.0
+    summary_note: Optional[str] = ""
+
 
 class GeminiParsedTransaction(BaseModel):
     merchant: str
