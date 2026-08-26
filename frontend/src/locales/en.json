@@ -133,10 +133,17 @@
     "back": "Back"
   },
   "accounts": {
-    "available_credit": "Available Credit:",
-    "outstanding_balance": "Outstanding Debt:",
-    "note": "Description"
-  },
+  "usd_assets": "USD ASSETS",
+  "khr_assets": "KHR ASSETS",
+  "total_liabilities": "TOTAL LIABILITIES",
+  "usd_net_worth": "USD NET WORTH",
+  "available_balance": "AVAILABLE BALANCE",
+  "active_ledger": "Active Ledger",
+  "type_normal": "NORMAL",
+  "available_credit": "Available Credit:",
+  "outstanding_balance": "Outstanding Balance:",
+  "note": "Note"
+},
   "budgets": {
     "title": "Capital Allocation & Strategy Center",
     "no_budgets": "No active tracking rules or strategies created yet.",
