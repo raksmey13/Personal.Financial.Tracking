@@ -149,17 +149,18 @@ const AIChatDrawer = () => {
   // ==============================================================================
   return (
     // 🟢 Draggable Framer Motion Wrapper
-    <motion.div
-      drag
-      dragMomentum={false}
-      dragConstraints={{
-        left: 0,
-        right: typeof window !== "undefined" ? window.innerWidth - 100 : 800,
-        top: 0,
-        bottom: typeof window !== "undefined" ? window.innerHeight - 100 : 800,
-      }}
-      className="fixed bottom-8 left-8 z-[200] font-sans cursor-grab active:cursor-grabbing"
-    >
+     <motion.div
+          drag
+          dragMomentum={false}
+          dragElastic={0.05}
+          dragConstraints={{
+            top: -window.innerHeight + 550,
+            bottom: 0,
+            left: 0,
+            right: window.innerWidth - 420,
+          }}
+          className="fixed bottom-8 left-8 z-[200] font-sans"
+        >
       {/* 🔴 A. Floating Action Button (FAB) */}
       {!isOpen && (
         <button
