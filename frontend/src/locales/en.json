@@ -400,5 +400,15 @@
     "success_prefix": "Success",
     "error_prefix": "Error",
     "import_failed": "Failed to process import."
-  }
+  },
+  "categories": {
+  "add_category": "Add Category",
+  "category_name": "Category Name",
+  "name_placeholder": "Enter category name...",
+  "parent_category": "Parent Category",
+  "none_main_category": "-- None (Main Category) --",
+  "choose_icon": "Choose Icon",
+  "system_allocation_type": "System Allocation Type",
+  "system_categories": "System Categories"
+}
 }

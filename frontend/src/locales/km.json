@@ -400,5 +400,15 @@
     "success_prefix": "ជោគជ័យ",
     "error_prefix": "កំហុស",
     "import_failed": "បរាជ័យក្នុងការដំណើរការនាំចូល។"
-  }
+  },
+  "categories": {
+  "add_category": "បន្ថែមប្រភេទ",
+  "category_name": "ឈ្មោះប្រភេទ",
+  "name_placeholder": "បញ្ចូលឈ្មោះប្រភេទ...",
+  "parent_category": "ប្រភេទមេ",
+  "none_main_category": "-- គ្មាន (ជាប្រភេទមេ) --",
+  "choose_icon": "ជ្រើសរើសរូបតំណាង",
+  "system_allocation_type": "ប្រភេទនៃការបែងចែក",
+  "system_categories": "ប្រភេទប្រព័ន្ធ"
+}
 }
