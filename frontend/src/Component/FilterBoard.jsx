@@ -6,11 +6,7 @@ const FilterBoard = ({ accounts, categories, onFilterChange }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [selectedAccount, setSelectedAccount] = useState("all");
-
-const FilterBoard = ({ accounts, categories, onFilterChange }) => {
-  const { t } = useTranslation(); // 🟢 2. Initialize the translation function
-  const [searchTerm, setSearchTerm] = useState("");
-
+  const { t } = useTranslation();
   // 🚀 SUB-FILTER STATES
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedCurrency, setSelectedCurrency] = useState("all"); // 🟢 USD / KHR Filter

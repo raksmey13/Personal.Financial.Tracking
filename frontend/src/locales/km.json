@@ -80,12 +80,12 @@
     "dark_mode": "របៀបងងឹត"
   },
   "filter": {
-    "search_placeholder": "ស្វែងរកចំណាំ ប้าย ឬ អ្នកទទួល...",
+    "search_placeholder": "ស្វែងរកចំណាំ ឬ អ្នកទទួល...",
     "all_types": "ប្រភេទប្រតិបត្តិការទាំងអស់",
     "transfer": "ការផ្ទេរប្រាក់",
     "all_accounts": "គណនីទាំងអស់រួមបញ្ជូលគ្នា",
     "all_currencies": "រូបិយប័ណ្ណ (ទាំងអស់)",
-    "all_categories": "ប្រភេទ / ប้าย ទាំងអស់",
+    "all_categories": "ប្រភេទ / ទាំងអស់",
     "all_statuses": "ស្ថានភាពធាតុទាំងអស់",
     "logged_transactions": "ប្រតិបត្តិការបានកត់ត្រា",
     "to": "ដល់",
