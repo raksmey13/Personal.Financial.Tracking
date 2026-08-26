@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { FaSearch } from 'react-icons/fa';
+import { useTranslation } from "react-i18next";
 
 const FilterBoard = ({ accounts, categories, onFilterChange }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [selectedAccount, setSelectedAccount] = useState("all");
+
+const FilterBoard = ({ accounts, categories, onFilterChange }) => {
+  const { t } = useTranslation(); // 🟢 2. Initialize the translation function
+  const [searchTerm, setSearchTerm] = useState("");
 
   // 🚀 SUB-FILTER STATES
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -54,7 +59,7 @@ const FilterBoard = ({ accounts, categories, onFilterChange }) => {
       <FaSearch className="absolute left-4 top-3.5 text-gray-400 dark:text-gray-500 text-xs" />
       <input
         type="text"
-        placeholder="Search descriptions, tags, or beneficiaries..."
+        placeholder={t("filter.search_placeholder")}
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
         className="w-full pl-11 pr-4 py-2.5 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all duration-200"
@@ -68,10 +73,10 @@ const FilterBoard = ({ accounts, categories, onFilterChange }) => {
         onChange={(e) => setFilterType(e.target.value)}
         className="w-full px-3 py-2.5 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 rounded-2xl text-xs font-bold text-gray-600 dark:text-gray-200 outline-none cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800 focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"
       >
-        <option value="all">🔄 All Entry Types</option>
-        <option value="income">🟢 Income</option>
-        <option value="expense">🔴 Expense</option>
-        <option value="transfer">🔵 Transfer</option>
+        <option value="all">🔄 {t("filter.all_types")}</option>
+        <option value="income">🟢 {t("transactions.income")}</option>
+        <option value="expense">🔴 {t("transactions.expense")}</option>
+        <option value="transfer">🔵 {t("filter.transfer")}</option>
       </select>
     </div>
 
@@ -82,7 +87,7 @@ const FilterBoard = ({ accounts, categories, onFilterChange }) => {
         onChange={(e) => setSelectedAccount(e.target.value)}
         className="w-full px-3 py-2.5 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 rounded-2xl text-xs font-bold text-gray-600 dark:text-gray-200 outline-none cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800 focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"
       >
-        <option value="all">🏦 All Combined Accounts</option>
+        <option value="all">🏦 {t("filter.all_accounts")}</option>
         {accounts.map(acc => (
           <option key={acc.id} value={String(acc.id)}>📇 {acc.account_name}</option>
         ))}
@@ -96,7 +101,7 @@ const FilterBoard = ({ accounts, categories, onFilterChange }) => {
         onChange={(e) => setSelectedCurrency(e.target.value)}
         className="w-full px-3 py-2.5 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 rounded-2xl text-xs font-bold text-gray-600 dark:text-gray-200 outline-none cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800 focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"
       >
-        <option value="all">💱 Currency (All)</option>
+        <option value="all">💱 {t("filter.all_currencies")}</option>
         <option value="USD">💵 USD ($)</option>
         <option value="KHR">៛ KHR (៛)</option>
       </select>
@@ -114,7 +119,7 @@ const FilterBoard = ({ accounts, categories, onFilterChange }) => {
         onChange={(e) => setSelectedCategory(e.target.value)}
         className="w-full px-3 py-2.5 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 rounded-2xl text-xs font-bold text-gray-600 dark:text-gray-200 outline-none cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800 focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"
       >
-        <option value="all">🏷️ All Categories / Tags</option>
+        <option value="all">🏷️ {t("filter.all_categories")}</option>
         {categories.map(cat => (
           <option key={cat.id} value={String(cat.id)}>» {cat.name}</option>
         ))}
@@ -128,9 +133,9 @@ const FilterBoard = ({ accounts, categories, onFilterChange }) => {
         onChange={(e) => setStatusFilter(e.target.value)}
         className="w-full px-3 py-2.5 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 rounded-2xl text-xs font-bold text-gray-600 dark:text-gray-200 outline-none cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800 focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"
       >
-        <option value="all">📥 All Item Statuses</option>
-        <option value="logged">✅ Logged Transactions</option>
-        <option value="pending">🟡 Pending Inbox Items</option>
+        <option value="all">📥 {t("filter.all_statuses")}</option>
+        <option value="logged">✅ {t("filter.logged_transactions")}</option>
+        <option value="pending">🟡 {t("transactions.pending_inbox")}</option>
       </select>
     </div>
 
@@ -142,7 +147,7 @@ const FilterBoard = ({ accounts, categories, onFilterChange }) => {
         onChange={(e) => setStartDate(e.target.value)}
         className="w-full px-2 py-2 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 rounded-2xl text-[10px] font-bold text-gray-500 dark:text-gray-300 outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"
       />
-      <span className="text-gray-400 dark:text-gray-500 text-xs font-bold">to</span>
+      <span className="text-gray-400 dark:text-gray-500 text-xs font-bold">{t("filter.to")}</span>
       <input
         type="date"
         value={endDate}
@@ -157,7 +162,7 @@ const FilterBoard = ({ accounts, categories, onFilterChange }) => {
         <span className="absolute left-2.5 top-2 text-gray-400 dark:text-gray-500 text-[10px] font-bold">$</span>
         <input
           type="number"
-          placeholder="Min"
+          placeholder={t("filter.min")}
           value={minAmount}
           onChange={(e) => setMinAmount(e.target.value)}
           className="w-full pl-5 pr-2 py-2 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"
@@ -168,7 +173,7 @@ const FilterBoard = ({ accounts, categories, onFilterChange }) => {
         <span className="absolute left-2.5 top-2 text-gray-400 dark:text-gray-500 text-[10px] font-bold">$</span>
         <input
           type="number"
-          placeholder="Max"
+          placeholder={t("filter.max")}
           value={maxAmount}
           onChange={(e) => setMaxAmount(e.target.value)}
           className="w-full pl-5 pr-2 py-2 bg-gray-50/60 dark:bg-[#1E293B] border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-2xl text-xs font-semibold placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-blue-500 transition-all duration-200"

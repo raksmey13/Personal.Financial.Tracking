@@ -78,5 +78,18 @@
     "transition_set_transaction": "Transition Set of Transaction",
     "display_bank_check": "Display Bank Check Icon",
     "dark_mode": "Dark Mode"
+  },
+  "filter": {
+    "search_placeholder": "Search descriptions, tags, or beneficiaries...",
+    "all_types": "All Entry Types",
+    "transfer": "Transfer",
+    "all_accounts": "All Combined Accounts",
+    "all_currencies": "Currency (All)",
+    "all_categories": "All Categories / Tags",
+    "all_statuses": "All Item Statuses",
+    "logged_transactions": "Logged Transactions",
+    "to": "to",
+    "min": "Min",
+    "max": "Max"
   }
 }
