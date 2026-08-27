@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Doughnut, Line, Bar } from 'react-chartjs-2';
 import TransactionModal from "./TransactionModal";
-import { categoryAPI, accountAPI, analyticsAPI, budgetAPI, transactionAPI } from "../API/index";
+import { categoryAPI, accountAPI, analyticsAPI, transactionAPI } from "../API/index";
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
   BarElement, ArcElement, Title, Tooltip, Legend, Filler
 } from 'chart.js';
-import { FaPlus, FaMinus, FaWallet } from 'react-icons/fa';
+import { FaPlus, FaMinus } from 'react-icons/fa';
 import { useTranslation } from "react-i18next";
 
 ChartJS.register(
@@ -39,7 +39,6 @@ export default function Overview() {
   const [showForm, setShowForm] = useState(null);
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
-  const [budgets, setBudgets] = useState([]);
   const [transactions, setTransactions] = useState([]);
 
   // Local Chart Currency Toggle State ("USD" or "KHR")
@@ -68,11 +67,10 @@ export default function Overview() {
 
   const fetchInitialData = async () => {
     try {
-      const [catRes, accRes, analyticsRes, budgetRes, txRes] = await Promise.all([
+      const [catRes, accRes, analyticsRes, txRes] = await Promise.all([
         categoryAPI.getAll(),
         accountAPI.getAll(),
         analyticsAPI.getSummary(),
-        budgetAPI.getCalculated(),
         transactionAPI.getAll()
       ]);
 
@@ -81,7 +79,6 @@ export default function Overview() {
 
       setCategories(Array.isArray(catRes.data) ? catRes.data : []);
       setAccounts(loadedAccounts);
-      setBudgets(Array.isArray(budgetRes.data) ? budgetRes.data : []);
       setTransactions(loadedTransactions);
 
       if (analyticsRes && analyticsRes.data) {
@@ -225,10 +222,13 @@ export default function Overview() {
   const trendLineOptions = {
     plugins: { legend: { display: false } },
     layout: {
-      padding: { left: 18, right: 10 }
+      padding: { right: 10 }
     },
     scales: {
       y: {
+        afterFit: (scaleInstance) => {
+          scaleInstance.width = 65; // Fixed width prevents KHR symbol text truncation
+        },
         ticks: {
           callback: (value) => `${chartCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
           font: { size: 10, weight: '600' },
@@ -261,10 +261,13 @@ export default function Overview() {
   const weeklyBarOptions = {
     plugins: { legend: { display: false } },
     layout: {
-      padding: { left: 18, right: 10 }
+      padding: { right: 10 }
     },
     scales: {
       y: {
+        afterFit: (scaleInstance) => {
+          scaleInstance.width = 65; // Fixed width prevents KHR symbol text truncation
+        },
         beginAtZero: true,
         ticks: {
           callback: (value) => `${chartCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
@@ -406,10 +409,10 @@ export default function Overview() {
             </div>
           </div>
 
-          {/* 4. Weekly Bar Chart Card (Height Aligned) */}
-          <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-2 flex flex-col justify-between min-h-[380px] transition-colors">
+          {/* 4. Weekly Bar Chart Card */}
+          <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-2 transition-colors">
             <h2 className="text-[11px] font-bold text-gray-800 dark:text-gray-200">{t("dashboard.weekly_spending")}</h2>
-            <div className="h-64 w-full pt-2 flex-1">
+            <div className="h-56 w-full pt-2">
               <Bar data={weeklyBarData} options={weeklyBarOptions} />
             </div>
           </div>
@@ -502,118 +505,6 @@ export default function Overview() {
             </div>
             <div className="h-56 w-full">
               <Line data={trendLineData} options={trendLineOptions} />
-            </div>
-          </div>
-
-          {/* 3. Bottom Row Budgets Card (Height Aligned) */}
-          <div className="bg-white dark:bg-[#151D2A] p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 flex flex-col justify-between min-h-[380px] space-y-4 transition-colors">
-            <h3 className="text-[13px] font-bold text-gray-900 dark:text-gray-100">{t("dashboard.active_budgets")}</h3>
-            <div className="space-y-4 flex-1">
-              {budgets.length === 0 ? (
-                <div className="text-xs text-gray-400 italic text-center py-2">No active budgets configured.</div>
-              ) : (
-                budgets
-                  .filter(b => {
-                    const capVal = Number(b.total ?? b.budget_limit ?? b.cap ?? 0);
-                    const nameStr = String(b.name || b.category_name || '').toLowerCase();
-                    return capVal > 0 || nameStr.includes("master allocation");
-                  })
-                  .slice(0, 5)
-                  .map((item, idx) => {
-                    const nameStr = String(item.name || item.category_name || "Budget Strategy");
-                    const isMasterStrategy = nameStr.toLowerCase().includes("master allocation");
-
-                    // Multi-Bucket View for Master Allocation Strategy
-                    if (isMasterStrategy) {
-                      const needsSpent = Number(item.needs_spent || 0);
-                      const needsCap = Number(item.needs_cap || 75);
-                      const wantsSpent = Number(item.wants_spent || 5.58);
-                      const wantsCap = Number(item.wants_cap || 45);
-                      const savingsSpent = Number(item.savings_spent || 0);
-                      const savingsCap = Number(item.savings_cap || 15);
-                      const addonSpent = Number(item.addon_spent || 0);
-                      const addonCap = Number(item.addon_cap || 15);
-
-                      const allocCategories = [
-                        { label: "Needs (50.0%)", spent: needsSpent, cap: needsCap, color: "bg-blue-500", note: "Includes Categories: Credit Card Payment, Loan Repayment" },
-                        { label: "Wants (30.0%)", spent: wantsSpent, cap: wantsCap, color: "bg-purple-500", note: "Includes Categories: Transport" },
-                        { label: "Savings (10.0%)", spent: savingsSpent, cap: savingsCap, color: "bg-emerald-500", note: "Includes Categories: Sweep Saving" },
-                        { label: "Add-on Expense (10.0%)", spent: addonSpent, cap: addonCap, color: "bg-amber-500", note: "Includes Categories: General Expense" }
-                      ];
-
-                      return (
-                        <div key={item.id || idx} className="bg-gray-50 dark:bg-slate-800/40 p-3 rounded-xl border border-gray-200 dark:border-gray-700 space-y-2">
-                          <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-gray-900 dark:text-gray-100 text-xs">{nameStr}</span>
-                              <span className="bg-blue-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider">% PRO ALLOCATION</span>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2">
-                            {allocCategories.map((cat, cIdx) => {
-                              const pct = cat.cap > 0 ? Math.min(Math.round((cat.spent / cat.cap) * 100), 100) : 0;
-                              return (
-                                <div key={cIdx} className="bg-white dark:bg-[#151D2A] p-2 rounded-lg border border-gray-100 dark:border-gray-800 space-y-1">
-                                  <div className="flex justify-between items-center text-[10px] font-bold">
-                                    <span className="text-gray-800 dark:text-gray-200">{cat.label}</span>
-                                    <span className="text-gray-600 dark:text-gray-400">
-                                      Spent: <strong className="text-gray-900 dark:text-gray-100">{formatMoney(cat.spent, "USD")}</strong> / Cap: <strong className="text-gray-900 dark:text-gray-100">{formatMoney(cat.cap, "USD")}</strong>
-                                    </span>
-                                  </div>
-                                  <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-700 overflow-hidden rounded-full">
-                                    <div style={{ width: `${pct}%` }} className={`h-full ${cat.color}`} />
-                                  </div>
-                                  <p className="text-[8px] text-gray-400 dark:text-gray-500 italic">{cat.note}</p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    // Standard Category Budget Item
-                    const spentVal = Number(item.spent ?? item.spent_amount ?? 0);
-                    const capVal = Number(item.total ?? item.budget_limit ?? item.cap ?? 0);
-                    const isExpired = item.end && new Date(item.end) < new Date();
-                    const pct = item.progress || (capVal > 0 ? Math.round((spentVal / capVal) * 100) : 0);
-
-                    return (
-                      <div key={item.id || idx} className="flex items-center gap-4 text-xs">
-                        <div className="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-sm flex-shrink-0">
-                          <FaWallet />
-                        </div>
-                        <div className="flex-1 space-y-1.5">
-
-                          <div className="flex justify-between items-end">
-                            <div className="leading-tight flex items-center gap-2">
-                              <span className="font-bold text-gray-800 dark:text-gray-200 text-[12px] block">{nameStr}</span>
-                              {isExpired && (
-                                <span className="bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 text-[8px] font-bold px-1.5 py-0.5 rounded">Expired</span>
-                              )}
-                            </div>
-                            <div className="text-right">
-                              <span className="text-[10px] text-gray-600 dark:text-gray-400 font-bold block">{pct}%</span>
-                            </div>
-                          </div>
-
-                          <div className="w-full h-2 bg-gray-100 dark:bg-gray-700 overflow-hidden flex items-center rounded-full">
-                            <div
-                              style={{ width: `${Math.min(pct, 100)}%` }}
-                              className={`h-full ${pct > 100 ? 'bg-red-500' : 'bg-emerald-500'}`}
-                            />
-                          </div>
-
-                          <div className="flex justify-between items-center text-[10px] font-semibold text-gray-500 dark:text-gray-400">
-                            <span>{t("dashboard.spent")}: <strong className="text-gray-800 dark:text-gray-200">{formatMoney(spentVal, "USD")}</strong></span>
-                            <span>{t("dashboard.cap")}: <strong className="text-gray-800 dark:text-gray-200">{formatMoney(capVal, "USD")}</strong></span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
             </div>
           </div>
 
