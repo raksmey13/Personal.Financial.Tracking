@@ -18,7 +18,7 @@ def get_dashboard_summary(
         today = date.today()
 
         # ---------------------------------------------------------
-        # 1. CORE FINANCIAL HEALTH METRICS (STRICTLY SEPARATED)
+        # 1. CORE FINANCIAL HEALTH METRICS
         # ---------------------------------------------------------
         db_accounts = session.exec(
             select(Account).where(Account.user_id == user_id, Account.is_active == True)
@@ -64,21 +64,25 @@ def get_dashboard_summary(
         last_month_end = first_day_current - timedelta(days=1)
         first_day_last = last_month_end.replace(day=1)
 
-        # Helper: Clean join query using Account currency safely
-        def get_sum_by_currency(start_date: date, end_date: date, tx_type: str, target_currency: str) -> float:
+        # Helper: Robust Summing using Full Datetime Boundaries
+        def get_sum_by_currency(start_d: date, end_d: date, tx_type: str, target_currency: str) -> float:
             target = target_currency.upper().strip()
+            start_dt = datetime.combine(start_d, datetime.min.time())
+            end_dt = datetime.combine(end_d, datetime.max.time())
+
             stmt = (
-                select(func.sum(Transaction.amount))
+                select(func.sum(func.abs(Transaction.amount)))
                 .join(Account, Transaction.account_id == Account.id)
                 .where(
                     Transaction.user_id == user_id,
                     Transaction.type.ilike(tx_type),
-                    Transaction.transaction_date >= start_date,
-                    Transaction.transaction_date <= end_date,
+                    Transaction.transaction_date >= start_dt,
+                    Transaction.transaction_date <= end_dt,
                     func.trim(func.upper(Account.currency)) == target
                 )
             )
-            return abs(float(session.exec(stmt).first() or 0))
+            raw_sum = session.exec(stmt).first()
+            return float(raw_sum) if raw_sum is not None else 0.0
 
         # Current Month Breakdown
         curr_spent_usd = get_sum_by_currency(first_day_current, today, "expense", "USD")
