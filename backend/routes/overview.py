@@ -73,8 +73,8 @@ def get_dashboard_summary(
                 .where(
                     Transaction.user_id == user_id,
                     Transaction.type.ilike(tx_type),
-                    func.cast(Transaction.transaction_date, date) >= start_date,
-                    func.cast(Transaction.transaction_date, date) <= end_date,
+                    Transaction.transaction_date >= start_date,
+                    Transaction.transaction_date <= end_date,
                     func.trim(func.upper(Account.currency)) == target
                 )
             )
@@ -172,6 +172,7 @@ def get_dashboard_summary(
                 "current_progress_percentage": current_pct_usd,
                 "current_progress_percentage_khr": current_pct_khr
             },
+            # Added top-level last_month_performance object expected by frontend
             "last_month_performance": {
                 "last_month_income_usd": last_income_usd,
                 "last_month_income_khr": last_income_khr,
