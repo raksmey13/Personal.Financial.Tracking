@@ -95,7 +95,6 @@ def get_dashboard_summary(
         # ---------------------------------------------------------
         # 3. CASH FLOW DIRECT CALCULATION
         # ---------------------------------------------------------
-        # Direct Cash Flow = Income - Expenses for the period
         net_cash_flow_usd = curr_income_usd - curr_spent_usd
         net_cash_flow_khr = curr_income_khr - curr_spent_khr
 
@@ -171,12 +170,15 @@ def get_dashboard_summary(
                 "current_month_spent": curr_spent_usd,
                 "current_month_spent_khr": curr_spent_khr,
                 "current_progress_percentage": current_pct_usd,
-                "current_progress_percentage_khr": current_pct_khr,
-                "last_month_income": last_income_usd,
+                "current_progress_percentage_khr": current_pct_khr
+            },
+            # Added top-level last_month_performance object expected by frontend
+            "last_month_performance": {
+                "last_month_income_usd": last_income_usd,
                 "last_month_income_khr": last_income_khr,
-                "last_month_spent": last_spent_usd,
+                "last_month_spent_usd": last_spent_usd,
                 "last_month_spent_khr": last_spent_khr,
-                "last_progress_percentage": last_pct_usd,
+                "last_progress_percentage_usd": last_pct_usd,
                 "last_progress_percentage_khr": last_pct_khr
             },
             "weekly_spending": weekly_spending,
