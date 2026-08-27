@@ -51,7 +51,7 @@ def get_custom_analytics_report(
             Category.icon.label("cat_icon"),
             Category.parent_id.label("cat_parent_id")
         ).join(Account, Transaction.account_id == Account.id) \
-            .join(Category, Transaction.category_id == Category.id)
+            .join(Category, Transaction.category_id == Category.id, isouter=True)
 
         tx_statement = tx_statement.where(
             Account.user_id == user_id,
@@ -66,10 +66,12 @@ def get_custom_analytics_report(
         if target_currency:
             tx_statement = tx_statement.where(func.trim(func.upper(Account.currency)) == target_currency)
 
-        if view_type == "expenses":
-            tx_statement = tx_statement.where(Transaction.type.ilike("expense"))
-        elif view_type == "income":
-            tx_statement = tx_statement.where(Transaction.type.ilike("income"))
+        # 🟢 FIX: Handle both 'expenses'/'expense' and 'income' safely
+        v_type_clean = view_type.strip().lower()
+        if v_type_clean.startswith("expense"):
+            tx_statement = tx_statement.where(func.lower(Transaction.type).like("expense%"))
+        elif v_type_clean.startswith("income"):
+            tx_statement = tx_statement.where(func.lower(Transaction.type).like("income%"))
 
         if not include_debts:
             tx_statement = tx_statement.where(Account.account_type != "Credit Card")
@@ -81,20 +83,21 @@ def get_custom_analytics_report(
         for tx_id, tx_amount, tx_type, tx_desc, tx_date, tx_cat_id, acc_name, acc_currency, cat_name, cat_icon, cat_parent_id in raw_results:
             raw_val = float(tx_amount or 0.0)
             curr = str(acc_currency or "USD").strip().upper()
+            display_cat = cat_name or "Uncategorized"
 
             transactions_payload.append({
                 "id": tx_id,
                 "amount": abs(raw_val),
                 "currency": curr,
                 "type": tx_type,
-                "description": tx_desc if (tx_desc and tx_desc.strip()) else cat_name,
+                "description": tx_desc if (tx_desc and tx_desc.strip()) else display_cat,
                 "transaction_date": tx_date.strftime("%Y-%m-%d") if tx_date else "",
                 "account_name": acc_name,
                 "category_id": tx_cat_id,
                 "category": {
                     "id": tx_cat_id,
-                    "name": cat_name,
-                    "icon": cat_icon,
+                    "name": display_cat,
+                    "icon": cat_icon or "",
                     "parent_id": cat_parent_id
                 }
             })
@@ -135,10 +138,11 @@ def get_custom_analytics_report(
         if target_currency:
             category_statement = category_statement.where(func.trim(func.upper(Account.currency)) == target_currency)
 
-        if view_type == "expenses":
-            category_statement = category_statement.where(Transaction.type.ilike("expense"))
-        elif view_type == "income":
-            category_statement = category_statement.where(Transaction.type.ilike("income"))
+        # 🟢 FIX: Flexible case-insensitive type filtering for aggregated categories
+        if v_type_clean.startswith("expense"):
+            category_statement = category_statement.where(func.lower(Transaction.type).like("expense%"))
+        elif v_type_clean.startswith("income"):
+            category_statement = category_statement.where(func.lower(Transaction.type).like("income%"))
 
         if not include_debts:
             category_statement = category_statement.where(Account.account_type != "Credit Card")
@@ -150,7 +154,7 @@ def get_custom_analytics_report(
         categories_khr = []
         for index, (display_name, curr, total_sum) in enumerate(aggregated_categories):
             item = {
-                "name": display_name,
+                "name": display_name or "Uncategorized",
                 "amount": abs(float(total_sum or 0)),
                 "currency": curr,
                 "color": f"hsl({(index * 65) % 360}, 65%, 55%)"
@@ -196,7 +200,7 @@ def get_custom_analytics_report(
         start_bal_usd, start_bal_khr = bal_usd, bal_khr
         for tx_type, tx_amount, acc_currency in session.exec(future_tx_stmt).all():
             raw = float(tx_amount or 0.0)
-            is_deduction = tx_type.lower().startswith("expense") or raw < 0
+            is_deduction = str(tx_type).lower().startswith("expense") or raw < 0
             signed_val = -abs(raw) if is_deduction else abs(raw)
 
             curr = str(acc_currency or "USD").strip().upper()
@@ -238,7 +242,7 @@ def get_custom_analytics_report(
         for tx_date, tx_type, tx_amount, acc_currency, tx_desc in session.exec(time_stmt).all():
             d_str = tx_date.strftime("%Y-%m-%d")
             raw = float(tx_amount or 0.0)
-            is_deduction = tx_type.lower().startswith("expense") or raw < 0
+            is_deduction = str(tx_type).lower().startswith("expense") or raw < 0
             signed_val = -abs(raw) if is_deduction else abs(raw)
             is_baseline = (tx_desc == "Opening Balance Baseline")
 
@@ -274,7 +278,7 @@ def get_custom_analytics_report(
             inc_stmt = select(func.sum(func.abs(Transaction.amount))).join(Account,
                                                                            Transaction.account_id == Account.id).where(
                 Account.user_id == user_id,
-                Transaction.type.ilike("income"),
+                func.lower(Transaction.type).like("income%"),
                 Transaction.transaction_date >= from_date,
                 Transaction.transaction_date <= to_date,
                 func.trim(func.upper(Account.currency)) == curr_code,
@@ -283,7 +287,7 @@ def get_custom_analytics_report(
             exp_stmt = select(func.sum(func.abs(Transaction.amount))).join(Account,
                                                                            Transaction.account_id == Account.id).where(
                 Account.user_id == user_id,
-                Transaction.type.ilike("expense"),
+                func.lower(Transaction.type).like("expense%"),
                 Transaction.transaction_date >= from_date,
                 Transaction.transaction_date <= to_date,
                 func.trim(func.upper(Account.currency)) == curr_code,
