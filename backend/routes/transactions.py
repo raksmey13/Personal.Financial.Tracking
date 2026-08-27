@@ -421,5 +421,4 @@ def update_transaction(
         )
     except Exception as e:
         print(f"Notification engine warning on update evaluation: {e}")
-
     return db_transaction
