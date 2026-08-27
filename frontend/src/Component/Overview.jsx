@@ -54,6 +54,8 @@ export default function Overview() {
   const [monthlyBreakdown, setMonthlyBreakdown] = useState({
     incomeUSD: 0, spentUSD: 0,
     incomeKHR: 0, spentKHR: 0,
+    lastIncomeUSD: 0, lastSpentUSD: 0,
+    lastIncomeKHR: 0, lastSpentKHR: 0,
     progressUSD: 0, progressKHR: 0
   });
 
@@ -80,6 +82,7 @@ export default function Overview() {
         const metrics = data.metrics || {};
         const summary = data.summary || {};
         const perf = data.monthly_performance || {};
+        const lastPerf = data.last_month_performance || {};
 
         const incUSD = Number(summary.total_income_usd ?? perf.current_month_income ?? 0);
         const expUSD = Number(summary.total_expenses_usd ?? perf.current_month_spent ?? 0);
@@ -103,6 +106,10 @@ export default function Overview() {
           spentUSD: expUSD,
           incomeKHR: incKHR,
           spentKHR: expKHR,
+          lastIncomeUSD: Number(lastPerf.last_month_income_usd ?? 0),
+          lastSpentUSD: Number(lastPerf.last_month_spent_usd ?? 0),
+          lastIncomeKHR: Number(lastPerf.last_month_income_khr ?? 0),
+          lastSpentKHR: Number(lastPerf.last_month_spent_khr ?? 0),
           progressUSD: Number(perf.current_progress_percentage ?? 0),
           progressKHR: Number(perf.current_progress_percentage_khr ?? 0)
         });
@@ -275,7 +282,7 @@ export default function Overview() {
                 <span className="text-gray-600 dark:text-gray-400 font-medium text-[13px] block mb-1">{t("summary.total_debt")}</span>
                 <div className="flex justify-between items-center text-[13px] font-bold text-[#E50914] dark:text-red-400">
                   <span>{formatNativeMoney(-Math.abs(dashboardMetrics.debtUSD), "USD")}</span>
-                  {dashboardMetrics.debtKHR > 0 && <span>{formatNativeMoney(-Math.abs(dashboardMetrics.debtKHR), "KHR")}</span>}
+                  <span>{formatNativeMoney(-Math.abs(dashboardMetrics.debtKHR), "KHR")}</span>
                 </div>
               </div>
 
@@ -292,12 +299,13 @@ export default function Overview() {
                 </div>
               </div>
 
-              {/* Net Worth */}
-              <div className="pt-1 flex justify-between items-center">
-                <span className="text-gray-900 dark:text-gray-100 font-bold text-sm">{t("summary.net_worth")}</span>
-                <span className="font-bold text-[#009A00] dark:text-green-400 text-sm tracking-wide">
-                  {formatNativeMoney(globalCurrency === "KHR" ? dashboardMetrics.netWorthKHR : dashboardMetrics.netWorthUSD, globalCurrency)}
-                </span>
+              {/* Net Worth (Dual Currency Display) */}
+              <div className="pt-1">
+                <span className="text-gray-900 dark:text-gray-100 font-bold text-sm block mb-1">{t("summary.net_worth")}</span>
+                <div className="flex justify-between items-center text-[13px] font-bold text-[#009A00] dark:text-green-400">
+                  <span>{formatNativeMoney(dashboardMetrics.netWorthUSD, "USD")}</span>
+                  <span>{formatNativeMoney(dashboardMetrics.netWorthKHR, "KHR")}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -384,8 +392,8 @@ export default function Overview() {
               <div className="w-24 h-24 relative flex items-center justify-center">
                 <Doughnut data={monthChartData(monthlyBreakdown.progressUSD)} options={monthChartOptions} />
               </div>
-              <div className="flex-1 text-right pl-4 space-y-1.5">
-                <div className="flex items-center justify-between mb-2">
+              <div className="flex-1 text-right pl-4 space-y-1">
+                <div className="flex items-center justify-between mb-1">
                   <span className="text-[13px] font-bold text-gray-900 dark:text-gray-100">{t("summary.this_month")}</span>
                   <div className="flex flex-col text-[8px] text-[#009A00] font-bold">
                     <span>▲</span>
@@ -393,29 +401,18 @@ export default function Overview() {
                   </div>
                 </div>
 
-                {/* USD Breakdown */}
-                {monthlyBreakdown.incomeUSD > 0 && (
-                  <div className="font-bold text-[#009A00] dark:text-green-400 text-[13px]">{formatMoney(monthlyBreakdown.incomeUSD, "USD")}</div>
-                )}
-                {monthlyBreakdown.spentUSD > 0 && (
-                  <div className="font-bold text-[#E50914] dark:text-red-400 text-[13px] pb-1 border-b border-gray-200 dark:border-gray-700">
-                    {formatMoney(monthlyBreakdown.spentUSD, "USD", true)}
-                  </div>
-                )}
+                {/* USD Section */}
+                <div className="text-[10px] font-bold text-gray-400 uppercase">USD Track</div>
+                <div className="font-bold text-[#009A00] dark:text-green-400 text-[12px]">{formatNativeMoney(monthlyBreakdown.incomeUSD, "USD")}</div>
+                <div className="font-bold text-[#E50914] dark:text-red-400 text-[12px] pb-1 border-b border-gray-100 dark:border-gray-800">
+                  {formatNativeMoney(-Math.abs(monthlyBreakdown.spentUSD), "USD")}
+                </div>
 
-                {/* KHR Breakdown */}
-                {monthlyBreakdown.incomeKHR > 0 && (
-                  <div className="font-bold text-[#009A00] dark:text-green-400 text-[13px]">{formatMoney(monthlyBreakdown.incomeKHR, "KHR")}</div>
-                )}
-                {monthlyBreakdown.spentKHR > 0 && (
-                  <div className="font-bold text-[#E50914] dark:text-red-400 text-[13px] pb-1 border-b border-gray-200 dark:border-gray-700">
-                    {formatMoney(monthlyBreakdown.spentKHR, "KHR", true)}
-                  </div>
-                )}
-
-                {/* Net Flow Summary */}
-                <div className={`pt-1 font-bold text-[13px] tracking-wide ${cashFlowUSD >= 0 ? "text-[#009A00] dark:text-green-400" : "text-[#E50914] dark:text-red-400"}`}>
-                  {formatMoney(cashFlowUSD, "USD")}
+                {/* KHR Section */}
+                <div className="text-[10px] font-bold text-gray-400 uppercase pt-1">KHR Track</div>
+                <div className="font-bold text-[#009A00] dark:text-green-400 text-[12px]">{formatNativeMoney(monthlyBreakdown.incomeKHR, "KHR")}</div>
+                <div className="font-bold text-[#E50914] dark:text-red-400 text-[12px]">
+                  {formatNativeMoney(-Math.abs(monthlyBreakdown.spentKHR), "KHR")}
                 </div>
               </div>
             </div>
@@ -425,13 +422,24 @@ export default function Overview() {
               <div className="w-24 h-24 relative flex items-center justify-center">
                 <Doughnut data={monthChartData(0)} options={monthChartOptions} />
               </div>
-              <div className="flex-1 text-right pl-4 space-y-1.5">
-                <div className="flex items-center justify-between mb-2">
+              <div className="flex-1 text-right pl-4 space-y-1">
+                <div className="flex items-center justify-between mb-1">
                   <span className="text-[13px] font-bold text-gray-900 dark:text-gray-100">{t("summary.last_month")}</span>
                 </div>
-                <div className="font-bold text-[#009A00] dark:text-green-400 text-[13px]">$0.00</div>
-                <div className="font-bold text-[#E50914] dark:text-red-400 text-[13px] pb-2 border-b border-gray-300 dark:border-gray-700">$0.00</div>
-                <div className="pt-1 font-bold text-[#009A00] dark:text-green-400 text-[13px] tracking-wide">$0.00</div>
+
+                {/* USD Section */}
+                <div className="text-[10px] font-bold text-gray-400 uppercase">USD Track</div>
+                <div className="font-bold text-[#009A00] dark:text-green-400 text-[12px]">{formatNativeMoney(monthlyBreakdown.lastIncomeUSD, "USD")}</div>
+                <div className="font-bold text-[#E50914] dark:text-red-400 text-[12px] pb-1 border-b border-gray-100 dark:border-gray-800">
+                  {formatNativeMoney(-Math.abs(monthlyBreakdown.lastSpentUSD), "USD")}
+                </div>
+
+                {/* KHR Section */}
+                <div className="text-[10px] font-bold text-gray-400 uppercase pt-1">KHR Track</div>
+                <div className="font-bold text-[#009A00] dark:text-green-400 text-[12px]">{formatNativeMoney(monthlyBreakdown.lastIncomeKHR, "KHR")}</div>
+                <div className="font-bold text-[#E50914] dark:text-red-400 text-[12px]">
+                  {formatNativeMoney(-Math.abs(monthlyBreakdown.lastSpentKHR), "KHR")}
+                </div>
               </div>
             </div>
 
