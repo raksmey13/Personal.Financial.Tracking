@@ -221,7 +221,7 @@ export default function Overview() {
   const trendLineOptions = {
     plugins: { legend: { display: false } },
     layout: {
-      padding: { left: 20, right: 15 }
+      padding: { left: 35, right: 15, top: 10, bottom: 0 }
     },
     scales: {
       y: {
@@ -229,7 +229,9 @@ export default function Overview() {
           callback: (value) => `${chartCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
           font: { size: 10, weight: '600' },
           color: '#4B5563',
-          padding: 8
+          align: 'inner',
+          crossAlign: 'far',
+          padding: 4
         },
         grid: { color: '#E5E7EB', borderDash: [4, 4], drawBorder: false }
       },
@@ -258,16 +260,19 @@ export default function Overview() {
   const weeklyBarOptions = {
     plugins: { legend: { display: false } },
     layout: {
-      padding: { left: 20, right: 15 }
+      padding: { left: 35, right: 15, top: 10, bottom: 0 }
     },
     scales: {
       y: {
         beginAtZero: true,
+        grace: '10%',
         ticks: {
           callback: (value) => `${chartCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
           font: { size: 9, weight: '600' },
           color: '#4B5563',
-          padding: 8
+          align: 'inner',
+          crossAlign: 'far',
+          padding: 4
         },
         grid: { color: '#D1D5DB', borderDash: [3, 3], drawBorder: false }
       },
@@ -374,7 +379,7 @@ export default function Overview() {
             )}
           </div>
 
-          {/* 3. Credit Card Utilization Card (Bottom of Left Column) */}
+          {/* 3. Credit Card Utilization Card */}
           <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-3 transition-colors">
             <div className="flex justify-between items-start">
               <div className="leading-tight">
@@ -485,7 +490,7 @@ export default function Overview() {
             </div>
           </div>
 
-          {/* 3. Weekly Bar Chart Card (Moved to Right Column underneath Net Worth Trajectory) */}
+          {/* 3. Weekly Bar Chart Card */}
           <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-2 transition-colors">
             <h2 className="text-[11px] font-bold text-gray-800 dark:text-gray-200">{t("dashboard.weekly_spending")}</h2>
             <div className="h-56 w-full pt-2">
