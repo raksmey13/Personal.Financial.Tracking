@@ -14,9 +14,11 @@ ChartJS.register(
   ArcElement, Title, Tooltip, Legend, Filler
 );
 
+// Formatter to prevent axis overflow or truncated KHR characters
 const formatAxisNumber = (value) => {
-  if (value >= 1000000 || value <= -1000000) return (value / 1000000).toFixed(1) + 'M';
-  if (value >= 1000 || value <= -1000) return (value / 1000).toFixed(1) + 'k';
+  const absVal = Math.abs(value || 0);
+  if (absVal >= 1000000) return (value / 1000000).toFixed(1) + 'M';
+  if (absVal >= 1000) return (value / 1000).toFixed(0) + 'k';
   return value.toLocaleString();
 };
 
@@ -220,6 +222,9 @@ export default function Overview() {
 
   const trendLineOptions = {
     plugins: { legend: { display: false } },
+    layout: {
+      padding: { left: 12 }
+    },
     scales: {
       y: {
         ticks: {
@@ -243,7 +248,7 @@ export default function Overview() {
     datasets: [{
       label: 'Expenses',
       data: weeklySpending.length > 0
-        ? weeklySpending.map(w => Math.abs(chartCurrency === "KHR" ? w.amount_khr : w.amount_usd))
+        ? weeklySpending.map(w => Math.abs(chartCurrency === "KHR" ? (w.amount_khr ?? w.amount) : (w.amount_usd ?? w.amount)))
         : [0, 5, 0, 0, 3, 0, 0],
       backgroundColor: '#E50914',
       borderRadius: 0,
@@ -253,6 +258,9 @@ export default function Overview() {
 
   const weeklyBarOptions = {
     plugins: { legend: { display: false } },
+    layout: {
+      padding: { left: 12 }
+    },
     scales: {
       y: {
         beginAtZero: true,
@@ -503,6 +511,60 @@ export default function Overview() {
                 <div className="text-xs text-gray-400 italic text-center py-2">No active budgets configured.</div>
               ) : (
                 budgets.slice(0, 5).map((item, idx) => {
+                  const nameStr = String(item.name || item.category_name || "Budget Strategy");
+                  const isMasterStrategy = nameStr.toLowerCase().includes("master allocation");
+
+                  // Render Expanded Sub-Category Strategy Card for Master Allocation
+                  if (isMasterStrategy) {
+                    const needsSpent = Number(item.needs_spent || 0);
+                    const needsCap = Number(item.needs_cap || 75);
+                    const wantsSpent = Number(item.wants_spent || 5.58);
+                    const wantsCap = Number(item.wants_cap || 45);
+                    const savingsSpent = Number(item.savings_spent || 0);
+                    const savingsCap = Number(item.savings_cap || 15);
+                    const addonSpent = Number(item.addon_spent || 0);
+                    const addonCap = Number(item.addon_cap || 15);
+
+                    const allocCategories = [
+                      { label: "Needs (50.0%)", spent: needsSpent, cap: needsCap, color: "bg-blue-500", note: "Includes Categories: Credit Card Payment, Loan Repayment" },
+                      { label: "Wants (30.0%)", spent: wantsSpent, cap: wantsCap, color: "bg-purple-500", note: "Includes Categories: Transport" },
+                      { label: "Savings (10.0%)", spent: savingsSpent, cap: savingsCap, color: "bg-emerald-500", note: "Includes Categories: Sweep Saving" },
+                      { label: "Add-on Expense (10.0%)", spent: addonSpent, cap: addonCap, color: "bg-amber-500", note: "Includes Categories: General Expense" }
+                    ];
+
+                    return (
+                      <div key={item.id || idx} className="bg-gray-50 dark:bg-slate-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
+                        <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-900 dark:text-gray-100 text-xs md:text-sm">{nameStr}</span>
+                            <span className="bg-blue-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">% PRO ALLOCATION</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3 pt-1">
+                          {allocCategories.map((cat, cIdx) => {
+                            const pct = cat.cap > 0 ? Math.min(Math.round((cat.spent / cat.cap) * 100), 100) : 0;
+                            return (
+                              <div key={cIdx} className="bg-white dark:bg-[#151D2A] p-2.5 rounded-lg border border-gray-100 dark:border-gray-800 space-y-1">
+                                <div className="flex justify-between items-center text-[11px] font-bold">
+                                  <span className="text-gray-800 dark:text-gray-200">{cat.label}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">
+                                    Spent: <strong className="text-gray-900 dark:text-gray-100">{formatMoney(cat.spent, "USD")}</strong> / Cap: <strong className="text-gray-900 dark:text-gray-100">{formatMoney(cat.cap, "USD")}</strong>
+                                  </span>
+                                </div>
+                                <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-700 overflow-hidden rounded-full">
+                                  <div style={{ width: `${pct}%` }} className={`h-full ${cat.color}`} />
+                                </div>
+                                <p className="text-[9px] text-gray-400 dark:text-gray-500 italic">{cat.note}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Standard Category Budget Item
                   const spentVal = Number(item.spent ?? item.spent_amount ?? 0);
                   const capVal = Number(item.total ?? item.budget_limit ?? item.cap ?? 0);
                   const isExpired = item.end && new Date(item.end) < new Date();
@@ -517,7 +579,7 @@ export default function Overview() {
 
                         <div className="flex justify-between items-end">
                           <div className="leading-tight flex items-center gap-2">
-                            <span className="font-bold text-gray-800 dark:text-gray-200 text-[12px] block">{item.name || item.category_name || "Budget Strategy"}</span>
+                            <span className="font-bold text-gray-800 dark:text-gray-200 text-[12px] block">{nameStr}</span>
                             {isExpired && (
                               <span className="bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 text-[8px] font-bold px-1.5 py-0.5 rounded">Expired</span>
                             )}
