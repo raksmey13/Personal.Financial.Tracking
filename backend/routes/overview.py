@@ -172,7 +172,6 @@ def get_dashboard_summary(
                 "current_progress_percentage": current_pct_usd,
                 "current_progress_percentage_khr": current_pct_khr
             },
-            # Added top-level last_month_performance object expected by frontend
             "last_month_performance": {
                 "last_month_income_usd": last_income_usd,
                 "last_month_income_khr": last_income_khr,
