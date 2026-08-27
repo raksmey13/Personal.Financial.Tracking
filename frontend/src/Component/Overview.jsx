@@ -14,12 +14,12 @@ ChartJS.register(
   ArcElement, Title, Tooltip, Legend, Filler
 );
 
-// Formatter to scale large numbers and prevent KHR symbol clipping
+// Formatter to scale numbers: 500000 -> "500k", 1000000 -> "1M"
 const formatAxisNumber = (value) => {
   const num = Number(value);
   if (isNaN(num)) return value;
   const absVal = Math.abs(num);
-  if (absVal >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+  if (absVal >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
   if (absVal >= 1000) return (num / 1000).toFixed(0) + 'k';
   return num.toLocaleString();
 };
@@ -93,7 +93,6 @@ export default function Overview() {
         const incKHR = Number(summary.total_income_khr ?? perf.current_month_income_khr ?? 0);
         const expKHR = Number(summary.total_expenses_khr ?? perf.current_month_spent_khr ?? 0);
 
-        // Fallback calculation for last month if backend returns 0
         let lastIncUSD = Number(lastPerf.last_month_income_usd ?? 0);
         let lastExpUSD = Number(lastPerf.last_month_spent_usd ?? 0);
         let lastIncKHR = Number(lastPerf.last_month_income_khr ?? 0);
@@ -222,17 +221,15 @@ export default function Overview() {
   const trendLineOptions = {
     plugins: { legend: { display: false } },
     layout: {
-      padding: { right: 10 }
+      padding: { left: 20, right: 15 }
     },
     scales: {
       y: {
-        afterFit: (scaleInstance) => {
-          scaleInstance.width = 65; // Fixed width prevents KHR symbol text truncation
-        },
         ticks: {
           callback: (value) => `${chartCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
           font: { size: 10, weight: '600' },
-          color: '#4B5563'
+          color: '#4B5563',
+          padding: 8
         },
         grid: { color: '#E5E7EB', borderDash: [4, 4], drawBorder: false }
       },
@@ -261,31 +258,28 @@ export default function Overview() {
   const weeklyBarOptions = {
     plugins: { legend: { display: false } },
     layout: {
-      padding: { right: 10 }
+      padding: { left: 20, right: 15 }
     },
     scales: {
       y: {
-        afterFit: (scaleInstance) => {
-          scaleInstance.width = 65; // Fixed width prevents KHR symbol text truncation
-        },
         beginAtZero: true,
         ticks: {
           callback: (value) => `${chartCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
-          font: { size: 9 },
-          color: '#4B5563'
+          font: { size: 9, weight: '600' },
+          color: '#4B5563',
+          padding: 8
         },
         grid: { color: '#D1D5DB', borderDash: [3, 3], drawBorder: false }
       },
       x: {
         grid: { display: false, drawBorder: false },
-        ticks: { maxRotation: 0, font: { size: 9 }, color: '#4B5563' }
+        ticks: { maxRotation: 0, font: { size: 9, weight: '600' }, color: '#4B5563' }
       },
     },
     maintainAspectRatio: false,
     responsive: true,
   };
 
-  // Dynamic Credit Limit Calculation across active credit accounts
   const totalCreditLimitUSD = accounts
     .filter(a => a.is_active !== false && String(a.account_type || '').toLowerCase().includes('credit'))
     .reduce((sum, acc) => sum + Number(acc.credit_limit || acc.limit || 0), 0) || Math.max(dashboardMetrics.creditCardDebtUSD, 150);
@@ -296,7 +290,7 @@ export default function Overview() {
   return (
     <div className="bg-[#E9ECEF] dark:bg-[#0B0F17] p-4 lg:p-6 pb-24 min-h-screen font-sans w-full transition-colors">
 
-      <div className="max-w-[1400px] mx-auto grid grid-cols-12 gap-5">
+      <div className="max-w-[1400px] mx-auto grid grid-cols-12 gap-5 items-start">
 
         {/* ================= LEFT COLUMN ================= */}
         <div className="col-span-12 lg:col-span-4 space-y-5">
@@ -306,7 +300,6 @@ export default function Overview() {
             <h2 className="text-[15px] font-bold text-gray-900 dark:text-gray-100 mb-3">{t("summary.title")}</h2>
             <div className="space-y-3">
 
-              {/* Liquid Assets */}
               <div>
                 <span className="text-gray-600 dark:text-gray-400 font-medium text-[13px] block mb-1">{t("summary.liquid_assets")}</span>
                 <div className="flex justify-between items-center text-[13px] font-bold text-[#009A00] dark:text-green-400">
@@ -315,7 +308,6 @@ export default function Overview() {
                 </div>
               </div>
 
-              {/* Total Debt */}
               <div>
                 <span className="text-gray-600 dark:text-gray-400 font-medium text-[13px] block mb-1">{t("summary.total_debt")}</span>
                 <div className="flex justify-between items-center text-[13px] font-bold text-[#E50914] dark:text-red-400">
@@ -324,7 +316,6 @@ export default function Overview() {
                 </div>
               </div>
 
-              {/* Total Cash Flow */}
               <div className="pb-3 border-b border-gray-300 dark:border-gray-700">
                 <span className="text-gray-600 dark:text-gray-400 font-medium text-[13px] block mb-1">{t("summary.total_cash_flow")}</span>
                 <div className="flex justify-between items-center text-[13px] font-bold">
@@ -337,7 +328,6 @@ export default function Overview() {
                 </div>
               </div>
 
-              {/* Net Worth (Dual Currency Display) */}
               <div className="pt-1">
                 <span className="text-gray-900 dark:text-gray-100 font-bold text-sm block mb-1">{t("summary.net_worth")}</span>
                 <div className="flex justify-between items-center text-[13px] font-bold text-[#009A00] dark:text-green-400">
@@ -348,7 +338,7 @@ export default function Overview() {
             </div>
           </div>
 
-          {/* 2. Accounts Card (Shows ALL Accounts) */}
+          {/* 2. Accounts Card */}
           <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-4 transition-colors">
             <div className="flex justify-between items-center mb-1">
               <h2 className="text-[15px] font-bold text-gray-900 dark:text-gray-100">{t("dashboard.accounts")}</h2>
@@ -384,7 +374,7 @@ export default function Overview() {
             )}
           </div>
 
-          {/* 3. Credit Card Utilization Card */}
+          {/* 3. Credit Card Utilization Card (Bottom of Left Column) */}
           <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-3 transition-colors">
             <div className="flex justify-between items-start">
               <div className="leading-tight">
@@ -406,14 +396,6 @@ export default function Overview() {
               <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
                 {Math.round((dashboardMetrics.creditCardDebtUSD / totalCreditLimitUSD) * 100)}%
               </span>
-            </div>
-          </div>
-
-          {/* 4. Weekly Bar Chart Card */}
-          <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-2 transition-colors">
-            <h2 className="text-[11px] font-bold text-gray-800 dark:text-gray-200">{t("dashboard.weekly_spending")}</h2>
-            <div className="h-56 w-full pt-2">
-              <Bar data={weeklyBarData} options={weeklyBarOptions} />
             </div>
           </div>
 
@@ -439,14 +421,12 @@ export default function Overview() {
                   </div>
                 </div>
 
-                {/* USD Section */}
                 <div className="text-[10px] font-bold text-gray-400 uppercase">USD Track</div>
                 <div className="font-bold text-[#009A00] dark:text-green-400 text-[12px]">{formatNativeMoney(monthlyBreakdown.incomeUSD, "USD")}</div>
                 <div className="font-bold text-[#E50914] dark:text-red-400 text-[12px] pb-1 border-b border-gray-100 dark:border-gray-800">
                   {formatNativeMoney(-Math.abs(monthlyBreakdown.spentUSD), "USD")}
                 </div>
 
-                {/* KHR Section */}
                 <div className="text-[10px] font-bold text-gray-400 uppercase pt-1">KHR Track</div>
                 <div className="font-bold text-[#009A00] dark:text-green-400 text-[12px]">{formatNativeMoney(monthlyBreakdown.incomeKHR, "KHR")}</div>
                 <div className="font-bold text-[#E50914] dark:text-red-400 text-[12px]">
@@ -465,14 +445,12 @@ export default function Overview() {
                   <span className="text-[13px] font-bold text-gray-900 dark:text-gray-100">{t("summary.last_month")}</span>
                 </div>
 
-                {/* USD Section */}
                 <div className="text-[10px] font-bold text-gray-400 uppercase">USD Track</div>
                 <div className="font-bold text-[#009A00] dark:text-green-400 text-[12px]">{formatNativeMoney(monthlyBreakdown.lastIncomeUSD, "USD")}</div>
                 <div className="font-bold text-[#E50914] dark:text-red-400 text-[12px] pb-1 border-b border-gray-100 dark:border-gray-800">
                   {formatNativeMoney(-Math.abs(monthlyBreakdown.lastSpentUSD), "USD")}
                 </div>
 
-                {/* KHR Section */}
                 <div className="text-[10px] font-bold text-gray-400 uppercase pt-1">KHR Track</div>
                 <div className="font-bold text-[#009A00] dark:text-green-400 text-[12px]">{formatNativeMoney(monthlyBreakdown.lastIncomeKHR, "KHR")}</div>
                 <div className="font-bold text-[#E50914] dark:text-red-400 text-[12px]">
@@ -483,11 +461,10 @@ export default function Overview() {
 
           </div>
 
-          {/* 2. Middle Row Line Chart with Embedded Currency Switcher */}
+          {/* 2. Middle Row Line Chart */}
           <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-2 transition-colors">
             <div className="flex justify-between items-center mb-1">
               <h3 className="text-[12px] font-bold text-gray-800 dark:text-gray-200">{t("summary.net_worth_trajectory")}</h3>
-              {/* Embedded Currency Switcher */}
               <div className="bg-gray-100 dark:bg-[#1E293B] p-0.5 rounded-lg border border-gray-200 dark:border-gray-700 flex">
                 <button
                   onClick={() => setChartCurrency("USD")}
@@ -505,6 +482,14 @@ export default function Overview() {
             </div>
             <div className="h-56 w-full">
               <Line data={trendLineData} options={trendLineOptions} />
+            </div>
+          </div>
+
+          {/* 3. Weekly Bar Chart Card (Moved to Right Column underneath Net Worth Trajectory) */}
+          <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-2 transition-colors">
+            <h2 className="text-[11px] font-bold text-gray-800 dark:text-gray-200">{t("dashboard.weekly_spending")}</h2>
+            <div className="h-56 w-full pt-2">
+              <Bar data={weeklyBarData} options={weeklyBarOptions} />
             </div>
           </div>
 
