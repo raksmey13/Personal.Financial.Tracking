@@ -38,8 +38,8 @@ export default function Overview() {
   const [budgets, setBudgets] = useState([]);
   const [transactions, setTransactions] = useState([]);
 
-  // Global Currency Toggle State ("USD" or "KHR")
-  const [globalCurrency, setGlobalCurrency] = useState("USD");
+  // Local Chart Currency Toggle State ("USD" or "KHR")
+  const [chartCurrency, setChartCurrency] = useState("USD");
 
   // Multi-Currency Dashboard Metrics
   const [dashboardMetrics, setDashboardMetrics] = useState({
@@ -72,10 +72,13 @@ export default function Overview() {
         transactionAPI.getAll()
       ]);
 
+      const loadedAccounts = Array.isArray(accRes.data) ? accRes.data : [];
+      const loadedTransactions = Array.isArray(txRes.data) ? txRes.data : [];
+
       setCategories(Array.isArray(catRes.data) ? catRes.data : []);
-      setAccounts(Array.isArray(accRes.data) ? accRes.data : []);
+      setAccounts(loadedAccounts);
       setBudgets(Array.isArray(budgetRes.data) ? budgetRes.data : []);
-      setTransactions(Array.isArray(txRes.data) ? txRes.data : []);
+      setTransactions(loadedTransactions);
 
       if (analyticsRes && analyticsRes.data) {
         const data = analyticsRes.data;
@@ -88,6 +91,33 @@ export default function Overview() {
         const expUSD = Number(summary.total_expenses_usd ?? perf.current_month_spent ?? 0);
         const incKHR = Number(summary.total_income_khr ?? perf.current_month_income_khr ?? 0);
         const expKHR = Number(summary.total_expenses_khr ?? perf.current_month_spent_khr ?? 0);
+
+        // Fallback calculation for last month if backend returns 0
+        let lastIncUSD = Number(lastPerf.last_month_income_usd ?? 0);
+        let lastExpUSD = Number(lastPerf.last_month_spent_usd ?? 0);
+        let lastIncKHR = Number(lastPerf.last_month_income_khr ?? 0);
+        let lastExpKHR = Number(lastPerf.last_month_spent_khr ?? 0);
+
+        if (lastIncUSD === 0 && lastExpUSD === 0 && loadedTransactions.length > 0) {
+          const now = new Date();
+          const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+          loadedTransactions.forEach(tx => {
+            const txDate = new Date(tx.transaction_date);
+            if (txDate >= firstDayLastMonth && txDate <= lastDayLastMonth) {
+              const amt = Math.abs(Number(tx.amount || 0));
+              const isKHR = String(tx.currency || '').toUpperCase().trim() === 'KHR';
+              const isInc = String(tx.type || '').toLowerCase().includes('income');
+
+              if (isKHR) {
+                if (isInc) lastIncKHR += amt; else lastExpKHR += amt;
+              } else {
+                if (isInc) lastIncUSD += amt; else lastExpUSD += amt;
+              }
+            }
+          });
+        }
 
         setDashboardMetrics({
           liquidUSD: Number(metrics.balance_usd ?? 0),
@@ -106,10 +136,10 @@ export default function Overview() {
           spentUSD: expUSD,
           incomeKHR: incKHR,
           spentKHR: expKHR,
-          lastIncomeUSD: Number(lastPerf.last_month_income_usd ?? 0),
-          lastSpentUSD: Number(lastPerf.last_month_spent_usd ?? 0),
-          lastIncomeKHR: Number(lastPerf.last_month_income_khr ?? 0),
-          lastSpentKHR: Number(lastPerf.last_month_spent_khr ?? 0),
+          lastIncomeUSD: lastIncUSD,
+          lastSpentUSD: lastExpUSD,
+          lastIncomeKHR: lastIncKHR,
+          lastSpentKHR: lastExpKHR,
           progressUSD: Number(perf.current_progress_percentage ?? 0),
           progressKHR: Number(perf.current_progress_percentage_khr ?? 0)
         });
@@ -124,7 +154,7 @@ export default function Overview() {
 
   useEffect(() => {
     fetchInitialData();
-  }, [globalCurrency]);
+  }, [chartCurrency]);
 
   const closeModal = () => setShowForm(null);
 
@@ -172,12 +202,12 @@ export default function Overview() {
   };
 
   const trendLineData = {
-    labels: trendHistory.length > 0 ? trendHistory.map(t => t.label) : ["Nov", "Dec", "Jan", "Feb"],
+    labels: trendHistory.length > 0 ? trendHistory.map(t => t.label) : ["Mar", "Apr", "May", "Jun", "Jul", "Aug"],
     datasets: [{
       label: 'Net Worth Trajectory',
       data: trendHistory.length > 0
-        ? trendHistory.map(t => globalCurrency === "KHR" ? t.net_worth_khr : t.net_worth_usd)
-        : [1000, 1000, 1000, 995],
+        ? trendHistory.map(t => chartCurrency === "KHR" ? t.net_worth_khr : t.net_worth_usd)
+        : [2200, 2300, 2400, 2500, 2600, 2902.64],
       fill: true,
       backgroundColor: 'rgba(59, 130, 246, 0.1)',
       borderColor: '#3B82F6',
@@ -193,7 +223,7 @@ export default function Overview() {
     scales: {
       y: {
         ticks: {
-          callback: (value) => `${globalCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
+          callback: (value) => `${chartCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
           font: { size: 10, weight: '600' },
           color: '#4B5563'
         },
@@ -213,8 +243,8 @@ export default function Overview() {
     datasets: [{
       label: 'Expenses',
       data: weeklySpending.length > 0
-        ? weeklySpending.map(w => Math.abs(globalCurrency === "KHR" ? w.amount_khr : w.amount_usd))
-        : [0, 0, 0, 0, 0, 0, 5],
+        ? weeklySpending.map(w => Math.abs(chartCurrency === "KHR" ? w.amount_khr : w.amount_usd))
+        : [0, 5, 0, 0, 3, 0, 0],
       backgroundColor: '#E50914',
       borderRadius: 0,
       barThickness: 16,
@@ -227,7 +257,7 @@ export default function Overview() {
       y: {
         beginAtZero: true,
         ticks: {
-          callback: (value) => `${globalCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
+          callback: (value) => `${chartCurrency === "KHR" ? "៛" : "$"}${formatAxisNumber(value)}`,
           font: { size: 9 },
           color: '#4B5563'
         },
@@ -242,21 +272,16 @@ export default function Overview() {
     responsive: true,
   };
 
-  const creditLimitUSD = 150;
+  // Dynamic Credit Limit Calculation across active credit accounts
+  const totalCreditLimitUSD = accounts
+    .filter(a => a.is_active !== false && String(a.account_type || '').toLowerCase().includes('credit'))
+    .reduce((sum, acc) => sum + Number(acc.credit_limit || acc.limit || 0), 0) || Math.max(dashboardMetrics.creditCardDebtUSD, 150);
 
   const cashFlowUSD = dashboardMetrics.cashFlowUSD;
   const cashFlowKHR = dashboardMetrics.cashFlowKHR;
 
   return (
     <div className="bg-[#E9ECEF] dark:bg-[#0B0F17] p-4 lg:p-6 pb-24 min-h-screen font-sans w-full transition-colors">
-
-      {/* Currency Switcher */}
-      <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
-        <div className="bg-white dark:bg-[#151D2A] p-1 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 flex transition-colors">
-          <button onClick={() => setGlobalCurrency("USD")} className={`px-3 py-1 rounded-md text-xs font-bold cursor-pointer ${globalCurrency === "USD" ? 'bg-gray-100 dark:bg-[#1E293B] text-gray-800 dark:text-gray-100' : 'text-gray-400'}`}>USD</button>
-          <button onClick={() => setGlobalCurrency("KHR")} className={`px-3 py-1 rounded-md text-xs font-bold cursor-pointer ${globalCurrency === "KHR" ? 'bg-gray-100 dark:bg-[#1E293B] text-gray-800 dark:text-gray-100' : 'text-gray-400'}`}>KHR</button>
-        </div>
-      </div>
 
       <div className="max-w-[1400px] mx-auto grid grid-cols-12 gap-5">
 
@@ -310,31 +335,31 @@ export default function Overview() {
             </div>
           </div>
 
-          {/* 2. Accounts Card */}
+          {/* 2. Accounts Card (Shows ALL Accounts) */}
           <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-4 transition-colors">
             <div className="flex justify-between items-center mb-1">
               <h2 className="text-[15px] font-bold text-gray-900 dark:text-gray-100">{t("dashboard.accounts")}</h2>
               <span className="text-gray-400 dark:text-gray-500 font-black cursor-pointer text-lg leading-none">⋮</span>
             </div>
 
-            {accounts.filter(a => a.is_active !== false && !String(a.account_type || '').toLowerCase().includes('credit')).length === 0 ? (
+            {accounts.filter(a => a.is_active !== false).length === 0 ? (
               <div className="text-xs text-gray-400 italic py-2">No linked accounts.</div>
             ) : (
               accounts
-                .filter(a => a.is_active !== false && !String(a.account_type || '').toLowerCase().includes('credit'))
+                .filter(a => a.is_active !== false)
                 .slice(0, 5)
                 .map((acc, idx) => {
                   const rawBal = Number(acc.balance) || 0;
                   const accCurrency = String(acc.currency || "USD").toUpperCase().trim();
                   const typeStr = String(acc.account_type || '').toLowerCase();
-                  const isLoan = typeStr.includes("loan") || typeStr.includes("mortgage") || rawBal < 0;
+                  const isDebt = typeStr.includes("loan") || typeStr.includes("credit") || typeStr.includes("mortgage") || rawBal < 0;
 
                   return (
                     <div key={acc.id} className={`flex justify-between items-start ${idx !== 0 ? 'pt-3' : ''} border-b border-gray-100 dark:border-gray-800 last:border-0 pb-3`}>
                       <span className="font-medium text-gray-800 dark:text-gray-200 text-[13px] capitalize">{acc.account_name || acc.name}</span>
                       <div className="text-right leading-tight">
-                        <span className={`font-bold text-[13px] block ${isLoan ? 'text-[#E50914] dark:text-red-400' : 'text-[#009A00] dark:text-green-400'}`}>
-                          {formatMoney(Math.abs(rawBal), accCurrency, isLoan)}
+                        <span className={`font-bold text-[13px] block ${isDebt ? 'text-[#E50914] dark:text-red-400' : 'text-[#009A00] dark:text-green-400'}`}>
+                          {formatMoney(Math.abs(rawBal), accCurrency, isDebt)}
                         </span>
                         <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium capitalize block">
                           {getAccountTypeLabel(acc)} ({accCurrency})
@@ -352,7 +377,7 @@ export default function Overview() {
               <div className="leading-tight">
                 <span className="font-bold text-gray-900 dark:text-gray-100 text-[13px] block">{t("dashboard.credit_card_utilization")}</span>
                 <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">
-                  {formatMoney(dashboardMetrics.creditCardDebtUSD, "USD")} / {formatMoney(creditLimitUSD, "USD")} Limit
+                  {formatMoney(dashboardMetrics.creditCardDebtUSD, "USD")} / {formatMoney(totalCreditLimitUSD, "USD")} Limit
                 </span>
               </div>
               <span className="font-bold text-[#E50914] dark:text-red-400 text-[13px]">{formatMoney(dashboardMetrics.creditCardDebtUSD, "USD")}</span>
@@ -361,12 +386,12 @@ export default function Overview() {
             <div className="flex items-center gap-3">
               <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 overflow-hidden rounded-full">
                 <div
-                  style={{ width: `${Math.min((dashboardMetrics.creditCardDebtUSD / creditLimitUSD) * 100, 100)}%` }}
+                  style={{ width: `${Math.min((dashboardMetrics.creditCardDebtUSD / totalCreditLimitUSD) * 100, 100)}%` }}
                   className="h-full bg-[#E50914]"
                 />
               </div>
               <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
-                {Math.round((dashboardMetrics.creditCardDebtUSD / creditLimitUSD) * 100)}%
+                {Math.round((dashboardMetrics.creditCardDebtUSD / totalCreditLimitUSD) * 100)}%
               </span>
             </div>
           </div>
@@ -445,9 +470,26 @@ export default function Overview() {
 
           </div>
 
-          {/* 2. Middle Row Line Chart */}
+          {/* 2. Middle Row Line Chart with Embedded Currency Switcher */}
           <div className="bg-white dark:bg-[#151D2A] p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-2 transition-colors">
-            <h3 className="text-center text-[11px] font-bold text-gray-800 dark:text-gray-200">{t("summary.net_worth_trajectory")}</h3>
+            <div className="flex justify-between items-center mb-1">
+              <h3 className="text-[12px] font-bold text-gray-800 dark:text-gray-200">{t("summary.net_worth_trajectory")}</h3>
+              {/* Embedded Currency Switcher */}
+              <div className="bg-gray-100 dark:bg-[#1E293B] p-0.5 rounded-lg border border-gray-200 dark:border-gray-700 flex">
+                <button
+                  onClick={() => setChartCurrency("USD")}
+                  className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold cursor-pointer transition-colors ${chartCurrency === "USD" ? 'bg-white dark:bg-[#151D2A] text-blue-600 shadow-xs' : 'text-gray-400'}`}
+                >
+                  USD ($)
+                </button>
+                <button
+                  onClick={() => setChartCurrency("KHR")}
+                  className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold cursor-pointer transition-colors ${chartCurrency === "KHR" ? 'bg-white dark:bg-[#151D2A] text-blue-600 shadow-xs' : 'text-gray-400'}`}
+                >
+                  KHR (៛)
+                </button>
+              </div>
+            </div>
             <div className="h-56 w-full">
               <Line data={trendLineData} options={trendLineOptions} />
             </div>
