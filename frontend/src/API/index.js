@@ -10,7 +10,8 @@ const API = axios.create({
 // Automatically injects token headers on every network call
 API.interceptors.request.use(
   (config) => {
-    const sessionToken = localStorage.getItem("token");
+    // 🟢 Check both "token" and "access_token" to prevent 401 errors
+    const sessionToken = localStorage.getItem("token") || localStorage.getItem("access_token");
     if (sessionToken) {
       config.headers.Authorization = `Bearer ${sessionToken}`;
     }
