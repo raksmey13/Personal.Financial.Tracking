@@ -67,7 +67,7 @@ def download_excel_template():
         )
         align_center = Alignment(horizontal="center", vertical="center")
 
-        # SHEET 1: Data Entry Template (First Tab for Easy Access)
+        # SHEET 1: Data Entry Template (Clean tab without dummy rows)
         ws_tx = wb.active
         ws_tx.title = "Transactions"
         ws_tx.views.sheetView[0].showGridLines = True
@@ -80,21 +80,12 @@ def download_excel_template():
             cell.fill = header_fill
             cell.alignment = align_center
 
-        sample_rows = [
-            ["2026-08-15", "ABA USD", "Food & Dining", "expense", 12.50, "Lunch meeting"],
-            ["2026-08-15", "ABA KHR", "Transport", "expense", 6000, "Tuktuk ride"],
-            ["2026-08-01", "ABA USD", "Salary", "income", 1200.00, "Monthly Paycheck"]
-        ]
-
-        for row in sample_rows:
-            ws_tx.append(row)
-
         # Dropdown Validation for 'type' Column
         dv_type = DataValidation(type="list", formula1='"income,expense,transfer"', allow_blank=False)
         ws_tx.add_data_validation(dv_type)
         dv_type.add("D2:D1000")
 
-        # SHEET 2: Instructions & Field Rules
+        # SHEET 2: Instructions, Field Rules & Sample Reference Data
         ws_info = wb.create_sheet(title="Instructions")
         ws_info.views.sheetView[0].showGridLines = True
 
@@ -109,6 +100,19 @@ def download_excel_template():
         ]
 
         for row in instructions_data:
+            ws_info.append(row)
+
+        ws_info.append([])
+        ws_info.append(["Sample Data Reference (DO NOT COPY TO TRANSACTIONS TAB DIRECTLY):"])
+        ws_info.append(["date", "account_name", "category_name", "type", "amount", "description"])
+
+        sample_reference_rows = [
+            ["2026-08-15", "ABA USD", "Food & Dining", "expense", 12.50, "Lunch meeting"],
+            ["2026-08-15", "ABA KHR", "Transport", "expense", 6000, "Tuktuk ride"],
+            ["2026-08-01", "ABA USD", "Salary", "income", 1200.00, "Monthly Paycheck"]
+        ]
+
+        for row in sample_reference_rows:
             ws_info.append(row)
 
         for cell in ws_info[1]:
@@ -150,9 +154,6 @@ def download_template():
     writer = csv.writer(output)
 
     writer.writerow(["date", "account_name", "category_name", "type", "amount", "description"])
-    writer.writerow(["2026-08-01", "ABA USD", "Food & Dining", "expense", "15.50", "Lunch meeting"])
-    writer.writerow(["2026-08-01", "ABA USD", "Salary", "income", "1200.00", "Monthly Paycheck"])
-    writer.writerow(["2026-08-01", "ABA USD", "Sweep Saving", "transfer", "100.00", "50/30/20 Savings Allocation"])
 
     output.seek(0)
     return StreamingResponse(
@@ -434,6 +435,9 @@ async def import_file(
         select(Category).where(Category.user_id == current_user.id)
     ).first()
 
+    # Template sample descriptions to ignore during import
+    SAMPLE_DESCRIPTIONS = {"lunch meeting", "tuktuk ride", "monthly paycheck", "50/30/20 savings allocation"}
+
     for line_num, row in enumerate(parsed_rows, start=2):
         try:
             raw_date = str(row.get("date", "")).strip()
@@ -445,6 +449,10 @@ async def import_file(
 
             if raw_desc.lower() == "none":
                 raw_desc = ""
+
+            # Ignore sample template rows
+            if raw_desc.lower() in SAMPLE_DESCRIPTIONS:
+                continue
 
             amount_val = Decimal(raw_amount)
             if amount_val == 0:
