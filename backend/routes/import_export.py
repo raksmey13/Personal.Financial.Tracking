@@ -1,7 +1,7 @@
 import csv
 import io
 import os
-import urllib.request
+import re
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, status, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional
@@ -32,26 +32,31 @@ router = APIRouter(prefix="/export-import", tags=["Export & Import"])
 # =========================================================
 # KHMER FONT REGISTRATION
 # =========================================================
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))  # backend/routes
-BACKEND_DIR = os.path.dirname(CURRENT_DIR)                 # backend
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 
-possible_khmer_fonts = [
-    os.path.join(BACKEND_DIR, "fonts", "NotoSansKhmer-Regular.ttf"),
-    os.path.join(CURRENT_DIR, "fonts", "NotoSansKhmer-Regular.ttf"),
-    "fonts/NotoSansKhmer-Regular.ttf",
-    "backend/fonts/NotoSansKhmer-Regular.ttf",
-    "/usr/share/fonts/truetype/noto/NotoSansKhmer-Regular.ttf"
-]
+font_path = os.path.join(BACKEND_DIR, "fonts", "NotoSansKhmer-Regular.ttf")
 
-KHMER_FONT_NAME = "Helvetica"
-for font_path in possible_khmer_fonts:
-    if os.path.exists(font_path):
-        try:
-            pdfmetrics.registerFont(TTFont('NotoSansKhmer', font_path))
-            KHMER_FONT_NAME = 'NotoSansKhmer'
-            break
-        except Exception as e:
-            print(f"Failed to register TTFont: {e}")
+HAS_KHMER_FONT = False
+if os.path.exists(font_path):
+    try:
+        pdfmetrics.registerFont(TTFont('NotoSansKhmer', font_path))
+        HAS_KHMER_FONT = True
+    except Exception as e:
+        print(f"Failed to register TTFont: {e}")
+
+
+# Helper function to render text with Khmer font ONLY when Khmer characters exist
+def create_cell_paragraph(text: str, base_style_latin: ParagraphStyle, base_style_khmer: ParagraphStyle) -> Paragraph:
+    if not text:
+        return Paragraph("—", base_style_latin)
+
+    # Check if text contains Khmer Unicode range (\u1780-\u17FF)
+    contains_khmer = bool(re.search(r'[\u1780-\u17FF]', str(text)))
+
+    if contains_khmer and HAS_KHMER_FONT:
+        return Paragraph(str(text), base_style_khmer)
+    return Paragraph(str(text), base_style_latin)
 
 
 # =========================================================
@@ -76,7 +81,7 @@ def download_excel_template():
         )
         align_center = Alignment(horizontal="center", vertical="center")
 
-        # SHEET 1: Data Entry Template (Clean tab without dummy rows)
+        # SHEET 1: Data Entry Template
         ws_tx = wb.active
         ws_tx.title = "Transactions"
         ws_tx.views.sheetView[0].showGridLines = True
@@ -101,7 +106,8 @@ def download_excel_template():
         ws_info.append(["Field Name", "Required?", "Allowed Format / Values", "Description & Examples"])
         instructions_data = [
             ["date", "Yes", "YYYY-MM-DD (e.g. 2026-08-15)", "The date when the transaction occurred."],
-            ["account_name", "Yes", "Text (e.g. ABA USD, Cash)", "Must match an existing active account in your ledger."],
+            ["account_name", "Yes", "Text (e.g. ABA USD, Cash)",
+             "Must match an existing active account in your ledger."],
             ["category_name", "Yes", "Text (e.g. Food & Dining, Salary)", "Category or subcategory title."],
             ["type", "Yes", "income | expense | transfer", "Classification of cash flow."],
             ["amount", "Yes", "Numeric (e.g. 15.50 or 6000)", "Amount in native account currency."],
@@ -306,14 +312,25 @@ def export_pdf(
         textColor=colors.HexColor('#1E293B'),
         spaceAfter=12
     )
-    cell_style = ParagraphStyle(
-        'CellText',
+
+    # 🟢 DUAL STYLES FOR DYNAMIC FONT SWITCHING
+    style_latin = ParagraphStyle(
+        'CellLatin',
         parent=styles['Normal'],
         fontSize=8,
         leading=10,
-        fontName=KHMER_FONT_NAME,
+        fontName='Helvetica',
         textColor=colors.HexColor('#1E293B')
     )
+    style_khmer = ParagraphStyle(
+        'CellKhmer',
+        parent=styles['Normal'],
+        fontSize=8,
+        leading=10,
+        fontName='NotoSansKhmer' if HAS_KHMER_FONT else 'Helvetica',
+        textColor=colors.HexColor('#1E293B')
+    )
+
     cell_header_style = ParagraphStyle(
         'HeaderCellText',
         parent=styles['Normal'],
@@ -329,15 +346,6 @@ def export_pdf(
     headers = ["Date", "Account", "Category", "Type", "Amount", "Description"]
     table_data = [[Paragraph(h, cell_header_style) for h in headers]]
 
-    def sanitize_text(text: str) -> str:
-        """Safely passes strings without stripping Khmer text if font is loaded."""
-        if not text:
-            return ""
-        if KHMER_FONT_NAME == "Helvetica":
-            clean = "".join([c for c in text if ord(c) < 128]).strip()
-            return clean if clean else "—"
-        return text
-
     for tx in transactions:
         account = session.get(Account, tx.account_id)
         category = session.get(Category, tx.category_id) if tx.category_id else None
@@ -345,28 +353,25 @@ def export_pdf(
         acc_name = account.account_name if account else "N/A"
         curr = str(account.currency if account else "USD").strip().upper()
         cat_name = category.name if category else "Uncategorized"
+        raw_desc = tx.description or ""
 
-        acc_name_str = sanitize_text(acc_name)
-        cat_name_str = sanitize_text(cat_name)
-        raw_desc = sanitize_text(tx.description or "")
-
-        symbol = "KHR" if (curr == "KHR" and KHMER_FONT_NAME == "Helvetica") else ("៛" if curr == "KHR" else "$")
+        symbol = "៛" if (curr == "KHR" and HAS_KHMER_FONT) else ("KHR" if curr == "KHR" else "$")
 
         raw_amount = abs(tx.amount)
         if curr == "KHR":
-            symbol_fmt = f"{raw_amount:,.0f}{symbol}"
+            symbol_fmt = f"{raw_amount:,.0f} {symbol}"
         else:
             symbol_fmt = f"{symbol}{raw_amount:,.2f}"
 
         formatted_amount = f"-{symbol_fmt}" if tx.type.lower() == "expense" else f"+{symbol_fmt}"
 
         table_data.append([
-            Paragraph(str(tx.transaction_date), cell_style),
-            Paragraph(acc_name_str, cell_style),
-            Paragraph(cat_name_str, cell_style),
-            Paragraph(tx.type.capitalize(), cell_style),
-            Paragraph(formatted_amount, cell_style),
-            Paragraph(raw_desc, cell_style)
+            create_cell_paragraph(str(tx.transaction_date), style_latin, style_khmer),
+            create_cell_paragraph(acc_name, style_latin, style_khmer),
+            create_cell_paragraph(cat_name, style_latin, style_khmer),
+            create_cell_paragraph(tx.type.capitalize(), style_latin, style_khmer),
+            create_cell_paragraph(formatted_amount, style_latin, style_khmer),
+            create_cell_paragraph(raw_desc, style_latin, style_khmer)
         ])
 
     col_widths = [65, 85, 95, 55, 75, 165]
@@ -399,9 +404,9 @@ def export_pdf(
 # =========================================================
 @router.post("/import")
 async def import_file(
-    session: SessionDep,
-    current_user: User = Depends(get_current_user),
-    file: UploadFile = File(...)
+        session: SessionDep,
+        current_user: User = Depends(get_current_user),
+        file: UploadFile = File(...)
 ):
     """
     Parses uploaded CSV or Excel (.xlsx) files under current_user context.
@@ -450,7 +455,6 @@ async def import_file(
         select(Category).where(Category.user_id == current_user.id)
     ).first()
 
-    # Template sample descriptions to ignore during import
     SAMPLE_DESCRIPTIONS = {"lunch meeting", "tuktuk ride", "monthly paycheck", "50/30/20 savings allocation"}
 
     for line_num, row in enumerate(parsed_rows, start=2):
@@ -465,7 +469,6 @@ async def import_file(
             if raw_desc.lower() == "none":
                 raw_desc = ""
 
-            # Ignore sample template rows
             if raw_desc.lower() in SAMPLE_DESCRIPTIONS:
                 continue
 
