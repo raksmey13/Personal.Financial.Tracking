@@ -258,7 +258,15 @@ const AdminRoute = ({ currentUser, children }) => {
   return children;
 };
 
-// --- 4. Main App Export ---
+// --- 4. Protected User Route Wrapper ---
+const ProtectedUserRoute = ({ token, children }) => {
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+};
+
+// --- 5. Main App Export ---
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem("token") || null);
   const [currentUser, setCurrentUser] = useState(null);
@@ -289,6 +297,8 @@ export default function App() {
       if (res.ok) {
         const user = await res.json();
         setCurrentUser(user);
+      } else {
+        handleLogout();
       }
     } catch (err) {
       console.error("Error fetching user profile:", err);
@@ -406,57 +416,143 @@ export default function App() {
                 <Route
                   path="/"
                   element={
-                    !currentUser ? (
-                      <div className="h-screen w-full flex items-center justify-center bg-[#F8F9FD] dark:bg-[#0B0F17]">
-                        <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                      </div>
-                    ) : currentUser.is_admin ? (
-                      <Navigate to="/admin" replace />
-                    ) : (
-                      <Dashboard />
-                    )
+                    <ProtectedUserRoute token={token}>
+                      {!currentUser ? (
+                        <div className="h-screen w-full flex items-center justify-center bg-[#F8F9FD] dark:bg-[#0B0F17]">
+                          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                      ) : currentUser.is_admin ? (
+                        <Navigate to="/admin" replace />
+                      ) : (
+                        <Dashboard />
+                      )}
+                    </ProtectedUserRoute>
                   }
                 />
-                <Route path="/dashboard" element={<Dashboard />} />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <Dashboard />
+                    </ProtectedUserRoute>
+                  }
+                />
 
                 <Route
                   path="/admin"
                   element={
-                    <AdminRoute currentUser={currentUser}>
-                      <AdminDashboard />
-                    </AdminRoute>
+                    <ProtectedUserRoute token={token}>
+                      <AdminRoute currentUser={currentUser}>
+                        <AdminDashboard />
+                      </AdminRoute>
+                    </ProtectedUserRoute>
                   }
                 />
                 <Route
                   path="/admin/settings"
                   element={
-                    <AdminRoute currentUser={currentUser}>
-                      <AdminSettings />
-                    </AdminRoute>
+                    <ProtectedUserRoute token={token}>
+                      <AdminRoute currentUser={currentUser}>
+                        <AdminSettings />
+                      </AdminRoute>
+                    </ProtectedUserRoute>
                   }
                 />
 
                 <Route
                   path="/transaction"
                   element={
-                    <TransactionForm
-                      categories={[]}
-                      accounts={[]}
-                      onTransactionSuccess={loadNotifications}
-                      closeModal={() => {}}
-                    />
+                    <ProtectedUserRoute token={token}>
+                      <TransactionForm
+                        categories={[]}
+                        accounts={[]}
+                        onTransactionSuccess={loadNotifications}
+                        closeModal={() => {}}
+                      />
+                    </ProtectedUserRoute>
                   }
                 />
-                <Route path="/category" element={<CategoryForm />} />
-                <Route path="/accounts" element={<AccountPage />} />
-                <Route path="/budget" element={<BudgetPage />} />
-                <Route path="/analytic" element={<AnalyticsReport />} />
-                <Route path="/profile" element={<Profile dbSnapshot={currentUser || {}} />} />
-                <Route path="/export-pdf" element={<ExportImport mode="pdf" />} />
-                <Route path="/export-csv" element={<ExportImport mode="csv" />} />
-                <Route path="/import" element={<ExportImport mode="import" />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/calendar" element={<CalendarPage />} />
+                <Route
+                  path="/category"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <CategoryForm />
+                    </ProtectedUserRoute>
+                  }
+                />
+                <Route
+                  path="/accounts"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <AccountPage />
+                    </ProtectedUserRoute>
+                  }
+                />
+                <Route
+                  path="/budget"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <BudgetPage />
+                    </ProtectedUserRoute>
+                  }
+                />
+                <Route
+                  path="/analytic"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <AnalyticsReport />
+                    </ProtectedUserRoute>
+                  }
+                />
+                <Route
+                  path="/profile"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <Profile dbSnapshot={currentUser || {}} />
+                    </ProtectedUserRoute>
+                  }
+                />
+                <Route
+                  path="/export-pdf"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <ExportImport mode="pdf" />
+                    </ProtectedUserRoute>
+                  }
+                />
+                <Route
+                  path="/export-csv"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <ExportImport mode="csv" />
+                    </ProtectedUserRoute>
+                  }
+                />
+                <Route
+                  path="/import"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <ExportImport mode="import" />
+                    </ProtectedUserRoute>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <Settings />
+                    </ProtectedUserRoute>
+                  }
+                />
+                <Route
+                  path="/calendar"
+                  element={
+                    <ProtectedUserRoute token={token}>
+                      <CalendarPage />
+                    </ProtectedUserRoute>
+                  }
+                />
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </main>
 
