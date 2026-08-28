@@ -82,8 +82,8 @@ def create_account(
 
     try:
         starting_amount = Decimal(str(account_input.balance or 0.0))
-        input_name_lower = account_input.account_name.lower().strip()
-        should_be_savings_target = account_input.is_savings_target or ("saving" in input_name_lower)
+        # 🟢 REMOVED: Auto-detection based on the word "saving" in account_name
+        should_be_savings_target = account_input.is_savings_target
 
         # Reactivate existing soft-deleted account
         if existing_account and not existing_account.is_active:
