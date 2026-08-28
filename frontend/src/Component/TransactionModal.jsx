@@ -53,11 +53,11 @@ const TransactionModal = ({
 
   const [transactions, setTransactions] = useState([
     {
-      amount: editData ? String(editData.amount) : "",
+      amount: editData ? String(Math.abs(editData.amount)) : "",
       category_id: editData ? String(editData.category_id) : "",
       account_id: editData ? String(editData.account_id) : (filteredAccountsForDropdown[0]?.id ? String(filteredAccountsForDropdown[0].id) : ""),
-      from_account_id: "",
-      interest_amount: "",
+      from_account_id: editData?.account_id ? String(editData.account_id) : "",
+      interest_amount: editData?.interest_amount ? String(editData.interest_amount) : "",
       transaction_date: editData ? editData.transaction_date : new Date().toISOString().split('T')[0],
       transaction_time: editData && editData.transaction_time ? editData.transaction_time : new Date().toTimeString().split(' ')[0].substring(0, 5),
       description: editData ? editData.description : ""
@@ -98,16 +98,16 @@ const TransactionModal = ({
       // 1. LOAN ACCOUNT LOGIC
       if (isLoanAccount) {
         if (resolvedType === "income") {
-          return isLoanPayment;
+          return isLoanPayment || currentCatType === "transfer";
         } else {
-          return isLoanTopup;
+          return isLoanTopup || currentCatType === "expense";
         }
       }
 
       // 2. CREDIT CARD ACCOUNT LOGIC
       if (isCreditCard) {
         if (resolvedType === "income") {
-          return isCardPayment;
+          return isCardPayment || currentCatType === "transfer";
         } else {
           return currentCatType === "expense" && !isLoanPayment && !isLoanTopup && !isCardPayment;
         }
@@ -264,7 +264,7 @@ const TransactionModal = ({
     const enteredAmount = parseFloat(transactions[0].amount || 0);
     const enteredInterest = parseFloat(transactions[0].interest_amount || 0);
 
-    if (enteredInterest > enteredAmount) {
+    if (enteredInterest > enteredAmount && enteredAmount > 0) {
       alert(t("transactions.alert_interest_exceed"));
       return;
     }
@@ -285,7 +285,7 @@ const TransactionModal = ({
       const payload = {
         amount: enteredAmount, // Total Cash Deducted from Bank
         category_id: parseInt(transactions[0].category_id, 10),
-        account_id: isDebtSettlement ? parseInt(transactions[0].from_account_id, 10) : parseInt(transactions[0].account_id, 10),
+        account_id: isDebtSettlement ? parseInt(transactions[0].from_account_id || transactions[0].account_id, 10) : parseInt(transactions[0].account_id, 10),
         to_account_id: isDebtSettlement ? parseInt(transactions[0].account_id, 10) : null,
         interest_amount: enteredInterest, // Interest portion included in total amount
         description: transactions[0].description.trim() || `Transaction: ${chosenCategory?.name}`,
@@ -305,7 +305,6 @@ const TransactionModal = ({
         if (onTransactionSuccess) onTransactionSuccess();
 
         if (saveAndAddAnother && !editData) {
-          // Reset form fields for another transaction while keeping account and date/time
           setTransactions(prev => [
             {
               ...prev[0],
@@ -477,7 +476,7 @@ const TransactionModal = ({
 
           {isOverCreditLimit && (
             <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs font-bold px-4 py-3 rounded-xl mt-2 flex items-center gap-2">
-              ❌ {t("transactions.credit_limit_exceeded_error")}
+               {t("transactions.credit_limit_exceeded_error")}
             </div>
           )}
 
