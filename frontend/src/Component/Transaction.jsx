@@ -393,7 +393,7 @@ const TransactionForm = () => {
             <tbody className="text-gray-600 dark:text-slate-300 text-sm font-medium">
 
               {isShowingPending && paginatedData.map((item, index) => {
-                 const displayIndex = (currentPage - 1) * itemsPerPage + (index + 1);
+                 const displayIndex = dataSource.length - ((currentPage - 1) * itemsPerPage + index);
                  return (
                  <tr key={item.id} className="bg-amber-50/30 dark:bg-amber-950/20 hover:brightness-95 transition-all">
                     <td className="py-4 px-2 text-center text-gray-400 dark:text-slate-500 font-normal">{displayIndex}</td>
@@ -443,7 +443,7 @@ const TransactionForm = () => {
               );})}
 
               {!isShowingPending && paginatedData.map((item, index) => {
-                const displayIndex = (currentPage - 1) * itemsPerPage + (index + 1);
+                const displayIndex = dataSource.length - ((currentPage - 1) * itemsPerPage + index);
                 const isSystemOpeningBalance = item.description === "Opening Balance Baseline";
                 const matchedCategory = categories.find(c => c.id === item.category_id);
                 const categoryFullName = getCatName(item.category_id);
@@ -517,7 +517,7 @@ const TransactionForm = () => {
         {/* Mobile Card List View */}
         <div className="block md:hidden px-4 py-4 space-y-3 bg-[#fdfefe] dark:bg-slate-900">
           {paginatedData.map((item, index) => {
-             const displayIndex = (currentPage - 1) * itemsPerPage + (index + 1);
+             const displayIndex = dataSource.length - ((currentPage - 1) * itemsPerPage + index);
              const isPending = isShowingPending;
              const isSystemOpeningBalance = item.description === "Opening Balance Baseline";
              const matchedCategory = categories.find(c => c.id === item.category_id);
@@ -547,7 +547,6 @@ const TransactionForm = () => {
                       )}
                     </div>
                     <div>
-                      {/* 🟢 FIXED: Replaced item.id with displayIndex */}
                       <p className="text-xs text-gray-400 dark:text-slate-500 font-normal">#{displayIndex}</p>
                       <h4 className="font-bold text-gray-800 dark:text-slate-100 text-sm">
                         {isSystemOpeningBalance ? t("transactions.starting_balance") : categoryFullName.replace("➔", "»")}
