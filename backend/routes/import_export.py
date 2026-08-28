@@ -30,41 +30,28 @@ from .auth import get_current_user
 router = APIRouter(prefix="/export-import", tags=["Export & Import"])
 
 # =========================================================
-# KHMER FONT AUTO-LOADER & REGISTRATION
+# KHMER FONT REGISTRATION
 # =========================================================
-KHMER_FONT_NAME = "Helvetica"
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))  # backend/routes
+BACKEND_DIR = os.path.dirname(CURRENT_DIR)                 # backend
+
 possible_khmer_fonts = [
+    os.path.join(BACKEND_DIR, "fonts", "NotoSansKhmer-Regular.ttf"),
+    os.path.join(CURRENT_DIR, "fonts", "NotoSansKhmer-Regular.ttf"),
     "fonts/NotoSansKhmer-Regular.ttf",
     "backend/fonts/NotoSansKhmer-Regular.ttf",
     "/usr/share/fonts/truetype/noto/NotoSansKhmer-Regular.ttf"
 ]
 
-# Check existing paths
-font_found_path = None
+KHMER_FONT_NAME = "Helvetica"
 for font_path in possible_khmer_fonts:
     if os.path.exists(font_path):
-        font_found_path = font_path
-        break
-
-# Auto-download NotoSansKhmer if missing on server
-if not font_found_path:
-    try:
-        os.makedirs("fonts", exist_ok=True)
-        download_target = "fonts/NotoSansKhmer-Regular.ttf"
-        font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskhmer/NotoSansKhmer-Regular.ttf"
-        urllib.request.urlretrieve(font_url, download_target)
-        if os.path.exists(download_target):
-            font_found_path = download_target
-    except Exception as e:
-        print(f"Failed to auto-download Khmer font: {e}")
-
-if font_found_path:
-    try:
-        pdfmetrics.registerFont(TTFont('NotoSansKhmer', font_found_path))
-        KHMER_FONT_NAME = 'NotoSansKhmer'
-    except Exception as e:
-        print(f"Failed to register TTFont: {e}")
-        KHMER_FONT_NAME = 'Helvetica'
+        try:
+            pdfmetrics.registerFont(TTFont('NotoSansKhmer', font_path))
+            KHMER_FONT_NAME = 'NotoSansKhmer'
+            break
+        except Exception as e:
+            print(f"Failed to register TTFont: {e}")
 
 
 # =========================================================
@@ -343,7 +330,7 @@ def export_pdf(
     table_data = [[Paragraph(h, cell_header_style) for h in headers]]
 
     def sanitize_text(text: str) -> str:
-        """Safely cleans strings when running under standard Helvetica fallback."""
+        """Safely passes strings without stripping Khmer text if font is loaded."""
         if not text:
             return ""
         if KHMER_FONT_NAME == "Helvetica":
@@ -359,15 +346,11 @@ def export_pdf(
         curr = str(account.currency if account else "USD").strip().upper()
         cat_name = category.name if category else "Uncategorized"
 
-        # Sanitize Khmer text for fallback fonts
         acc_name_str = sanitize_text(acc_name)
         cat_name_str = sanitize_text(cat_name)
         raw_desc = sanitize_text(tx.description or "")
 
-        if KHMER_FONT_NAME == "Helvetica":
-            symbol = " KHR" if curr == "KHR" else "$"
-        else:
-            symbol = "៛" if curr == "KHR" else "$"
+        symbol = "KHR" if (curr == "KHR" and KHMER_FONT_NAME == "Helvetica") else ("៛" if curr == "KHR" else "$")
 
         raw_amount = abs(tx.amount)
         if curr == "KHR":
