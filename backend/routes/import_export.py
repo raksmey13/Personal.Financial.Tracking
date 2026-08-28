@@ -1,6 +1,7 @@
 import csv
 import io
 import os
+import urllib.request
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, status, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional
@@ -28,21 +29,42 @@ from .auth import get_current_user
 
 router = APIRouter(prefix="/export-import", tags=["Export & Import"])
 
-# Register Khmer Font for PDF generation if available, fallback gracefully
+# =========================================================
+# KHMER FONT AUTO-LOADER & REGISTRATION
+# =========================================================
 KHMER_FONT_NAME = "Helvetica"
 possible_khmer_fonts = [
     "fonts/NotoSansKhmer-Regular.ttf",
     "backend/fonts/NotoSansKhmer-Regular.ttf",
     "/usr/share/fonts/truetype/noto/NotoSansKhmer-Regular.ttf"
 ]
+
+# Check existing paths
+font_found_path = None
 for font_path in possible_khmer_fonts:
     if os.path.exists(font_path):
-        try:
-            pdfmetrics.registerFont(TTFont('NotoSansKhmer', font_path))
-            KHMER_FONT_NAME = 'NotoSansKhmer'
-            break
-        except Exception:
-            pass
+        font_found_path = font_path
+        break
+
+# Auto-download NotoSansKhmer if missing on server
+if not font_found_path:
+    try:
+        os.makedirs("fonts", exist_ok=True)
+        download_target = "fonts/NotoSansKhmer-Regular.ttf"
+        font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskhmer/NotoSansKhmer-Regular.ttf"
+        urllib.request.urlretrieve(font_url, download_target)
+        if os.path.exists(download_target):
+            font_found_path = download_target
+    except Exception as e:
+        print(f"Failed to auto-download Khmer font: {e}")
+
+if font_found_path:
+    try:
+        pdfmetrics.registerFont(TTFont('NotoSansKhmer', font_found_path))
+        KHMER_FONT_NAME = 'NotoSansKhmer'
+    except Exception as e:
+        print(f"Failed to register TTFont: {e}")
+        KHMER_FONT_NAME = 'Helvetica'
 
 
 # =========================================================
@@ -302,7 +324,7 @@ def export_pdf(
         parent=styles['Normal'],
         fontSize=8,
         leading=10,
-        fontName=KHMER_FONT_NAME if KHMER_FONT_NAME != 'Helvetica' else 'Helvetica',
+        fontName=KHMER_FONT_NAME,
         textColor=colors.HexColor('#1E293B')
     )
     cell_header_style = ParagraphStyle(
@@ -320,6 +342,15 @@ def export_pdf(
     headers = ["Date", "Account", "Category", "Type", "Amount", "Description"]
     table_data = [[Paragraph(h, cell_header_style) for h in headers]]
 
+    def sanitize_text(text: str) -> str:
+        """Safely cleans strings when running under standard Helvetica fallback."""
+        if not text:
+            return ""
+        if KHMER_FONT_NAME == "Helvetica":
+            clean = "".join([c for c in text if ord(c) < 128]).strip()
+            return clean if clean else "—"
+        return text
+
     for tx in transactions:
         account = session.get(Account, tx.account_id)
         category = session.get(Category, tx.category_id) if tx.category_id else None
@@ -328,11 +359,12 @@ def export_pdf(
         curr = str(account.currency if account else "USD").strip().upper()
         cat_name = category.name if category else "Uncategorized"
 
-        # Sanitize Khmer text & currency symbol to prevent PDF font crashes ("tofu" blocks)
-        raw_desc = tx.description or ""
+        # Sanitize Khmer text for fallback fonts
+        acc_name_str = sanitize_text(acc_name)
+        cat_name_str = sanitize_text(cat_name)
+        raw_desc = sanitize_text(tx.description or "")
+
         if KHMER_FONT_NAME == "Helvetica":
-            # Strip non-latin characters and replace ៛ with KHR if custom font isn't loaded
-            raw_desc = "".join([c for c in raw_desc if ord(c) < 128])
             symbol = " KHR" if curr == "KHR" else "$"
         else:
             symbol = "៛" if curr == "KHR" else "$"
@@ -347,8 +379,8 @@ def export_pdf(
 
         table_data.append([
             Paragraph(str(tx.transaction_date), cell_style),
-            Paragraph(acc_name, cell_style),
-            Paragraph(cat_name, cell_style),
+            Paragraph(acc_name_str, cell_style),
+            Paragraph(cat_name_str, cell_style),
             Paragraph(tx.type.capitalize(), cell_style),
             Paragraph(formatted_amount, cell_style),
             Paragraph(raw_desc, cell_style)
