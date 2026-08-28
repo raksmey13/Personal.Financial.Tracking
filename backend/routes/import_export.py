@@ -512,7 +512,6 @@ async def import_file(
 
     if imported_count > 0:
         session.commit()
-
     return {
         "status": 200,
         "message": f"Successfully imported {imported_count} transactions.",
