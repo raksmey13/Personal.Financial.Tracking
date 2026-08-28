@@ -142,7 +142,14 @@
   "type_normal": "NORMAL",
   "available_credit": "Available Credit:",
   "outstanding_balance": "Outstanding Balance:",
-  "note": "Note"
+  "note": "Note",
+  "total_inflow": "Total Inflow",
+  "total_outflow": "Total Outflow",
+  "type_credit": "Credit Card",
+  "owed_debt": "Owed Debt",
+  "due_day": "Due Day",
+  "due_in": "Due in",
+  "days": "days"
 },
   "budgets": {
     "title": "Capital Allocation & Strategy Center",
