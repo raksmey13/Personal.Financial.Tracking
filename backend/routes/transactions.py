@@ -94,9 +94,13 @@ def create_transaction(
         is_target_debt = "credit" in target_account_type or "card" in target_account_type or "loan" in target_account_type or "loan" in target_account_name or "credit" in target_account_name
 
         if is_target_debt:
-            target_account.balance += principal
+            # 🟢 FIXED: Paying down a loan/credit card liability reduces the owed balance (moves closer to 0)
+            if target_account.balance < 0:
+                target_account.balance += principal
+            else:
+                target_account.balance -= principal
         else:
-            target_account.balance -= principal
+            target_account.balance += principal
 
         session.add(source_account)
         session.add(target_account)
@@ -314,7 +318,10 @@ def delete_transaction(
         abs_amt = abs(transaction.amount)
 
         if is_target_debt:
-            target_account.balance += abs_amt
+            if target_account.balance < 0:
+                target_account.balance -= abs_amt
+            else:
+                target_account.balance += abs_amt
         else:
             target_account.balance -= abs_amt
         session.add(target_account)
