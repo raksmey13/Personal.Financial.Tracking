@@ -82,7 +82,6 @@ def create_account(
 
     try:
         starting_amount = Decimal(str(account_input.balance or 0.0))
-        # 🟢 REMOVED: Auto-detection based on the word "saving" in account_name
         should_be_savings_target = account_input.is_savings_target
 
         # Reactivate existing soft-deleted account
@@ -130,7 +129,7 @@ def create_account(
         if target_account.is_savings_target:
             reset_other_savings_targets(session, current_user.id, current_account_id=target_account.id)
 
-        # 🟢 UPDATED: Classify opening baseline as neutral 'transfer' instead of income/expense
+        # 🟢 Classify opening baseline as neutral 'transfer' instead of income/expense
         if starting_amount != Decimal("0.00"):
             default_category = session.exec(
                 select(Category).where(
@@ -158,7 +157,7 @@ def create_account(
                 account_id=target_account.id,
                 user_id=current_user.id,
                 amount=abs(starting_amount),
-                type="transfer",  # 🟢 Neutralized transaction type to prevent graph distortion
+                type="transfer",
                 description="Opening Balance Baseline",
                 transaction_date=datetime.now().date(),
                 category_id=default_category.id
