@@ -506,7 +506,6 @@ async def import_file(
             session.add(new_tx)
             session.add(account)
             imported_count += 1
-
         except Exception as err:
             errors.append(f"Row {line_num}: Failed to parse -> {str(err)}")
 
