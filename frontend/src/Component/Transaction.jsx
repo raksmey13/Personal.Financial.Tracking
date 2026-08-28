@@ -102,10 +102,9 @@ const TransactionForm = () => {
   };
 
   // --- CRUD: READ MAIN DATA ---
-  // 🟢 Added isSilent parameter to prevent showing the full-page loading spinner during background re-syncs
-  const fetchInitialData = async (isSilent = false) => {
+  const fetchInitialData = async () => {
     try {
-      if (!isSilent) setIsLoading(true);
+      setIsLoading(true);
       const [txRes, catRes, accRes] = await Promise.all([
         transactionAPI.getAll(),
         categoryAPI.getAll(),
@@ -118,7 +117,7 @@ const TransactionForm = () => {
     } catch (error) {
       console.error("Axios database synchronization failure:", error);
     } finally {
-      if (!isSilent) setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -142,7 +141,7 @@ const TransactionForm = () => {
     }
   }, [activeTab]);
 
-  // 🟢 Instant Optimistic Delete with Silent Re-fetch
+  // 🟢 Instant Optimistic Delete
   const handleDelete = (id) => {
     showConfirm(
       "Delete Transaction",
@@ -154,12 +153,12 @@ const TransactionForm = () => {
         try {
           const response = await transactionAPI.delete(id);
           if (response.status === 200) {
-            fetchInitialData(true); // 🟢 Silent re-fetch: table stays visible!
+            fetchInitialData();
           }
         } catch (error) {
           console.error("Axios delete operation failure:", error);
           showAlert("Error", "Failed to delete transaction on server. Syncing data...");
-          fetchInitialData(true); // Re-sync silently if API failed
+          fetchInitialData(); // Re-sync if API failed
         }
       }
     );
@@ -186,7 +185,7 @@ const TransactionForm = () => {
       );
 
       fetchPendingData();
-      fetchInitialData(true);
+      fetchInitialData();
     } catch (error) {
       console.error("Failed to approve transaction:", error);
       showAlert("Approval Failed", "Transaction approval failed. Refreshing list...");
