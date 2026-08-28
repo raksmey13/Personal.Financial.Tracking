@@ -547,6 +547,7 @@ const TransactionForm = () => {
                       )}
                     </div>
                     <div>
+                      {/* 🟢 FIXED: Replaced item.id with displayIndex */}
                       <p className="text-xs text-gray-400 dark:text-slate-500 font-normal">#{displayIndex}</p>
                       <h4 className="font-bold text-gray-800 dark:text-slate-100 text-sm">
                         {isSystemOpeningBalance ? t("transactions.starting_balance") : categoryFullName.replace("➔", "»")}
