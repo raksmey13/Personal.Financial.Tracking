@@ -374,10 +374,6 @@ def export_pdf(
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
-
-# =========================================================
-# 4. UNIVERSAL IMPORT (CSV & EXCEL .XLSX SUPPORTED)
-# =========================================================
 @router.post("/import")
 async def import_file(
         session: SessionDep,
@@ -497,7 +493,6 @@ async def import_file(
                 amount=clean_amount,
                 description=raw_desc or "Bulk File Import"
             )
-
             if raw_type == "income":
                 account.balance += clean_amount
             elif raw_type in ["expense", "transfer"]:
