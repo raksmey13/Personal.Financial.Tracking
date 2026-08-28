@@ -214,6 +214,7 @@ const TransactionModal = ({
       balanceValue = availableCreditNum.toFixed(2);
     } else if (isLoanAccount) {
       balanceLabel = t("accounts.outstanding_balance");
+      // 🟢 FIXED: Directly display the exact active loan balance
       balanceValue = Math.abs(rawBalance).toFixed(2);
     } else {
       balanceLabel = t("transactions.balance");
