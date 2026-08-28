@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FaCalendarAlt, FaWallet, FaPen, FaPlus, FaMinus, FaTag } from 'react-icons/fa';
+import { FaCalendarAlt, FaWallet, FaPen, FaTag } from 'react-icons/fa';
 import { transactionAPI } from "../API/index";
 import { getCategoryIconSource } from '../utils/icon';
 import { useTranslation } from "react-i18next";
@@ -17,6 +17,7 @@ const TransactionModal = ({
   const resolvedType = typeof type === 'string' && type ? type.toLowerCase() : 'expense';
 
   const [targetSavingsAmount, setTargetSavingsAmount] = useState("");
+  const [saveAndAddAnother, setSaveAndAddAnother] = useState(false);
 
   useEffect(() => {
     const fetchBudgetTarget = async () => {
@@ -241,30 +242,6 @@ const TransactionModal = ({
     dynamicSaveButtonText = t("transactions.log_savings_balance");
   }
 
-  const addNewItemRow = (e) => {
-    if (e) e.preventDefault();
-    if (editData) return;
-    setTransactions([
-      ...transactions,
-      {
-        amount: "",
-        category_id: "",
-        account_id: transactions[0]?.account_id || (filteredAccountsForDropdown[0]?.id ? String(filteredAccountsForDropdown[0].id) : ""),
-        from_account_id: "",
-        interest_amount: "",
-        transaction_date: transactions[0]?.transaction_date || new Date().toISOString().split('T')[0],
-        transaction_time: transactions[0]?.transaction_time || new Date().toTimeString().split(' ')[0].substring(0, 5),
-        description: transactions[0]?.description || ""
-      }
-    ]);
-  };
-
-  const removeItemRow = (e, indexToRemove) => {
-    if (e) e.preventDefault();
-    if (transactions.length === 1) return;
-    setTransactions(transactions.filter((_, idx) => idx !== indexToRemove));
-  };
-
   const handleFieldChange = (index, field, value) => {
     const updated = [...transactions];
     updated[index][field] = value;
@@ -326,7 +303,22 @@ const TransactionModal = ({
       if (response.status === 200 || response.status === 201) {
         if (fetchInitialData) fetchInitialData();
         if (onTransactionSuccess) onTransactionSuccess();
-        closeModal();
+
+        if (saveAndAddAnother && !editData) {
+          // Reset form fields for another transaction while keeping account and date/time
+          setTransactions(prev => [
+            {
+              ...prev[0],
+              amount: "",
+              category_id: "",
+              interest_amount: "",
+              description: ""
+            }
+          ]);
+          setSaveAndAddAnother(false);
+        } else {
+          closeModal();
+        }
       }
     } catch (error) {
       console.error("Transaction save tracking failure:", error);
@@ -479,28 +471,6 @@ const TransactionModal = ({
                     </div>
                   </div>
                 </div>
-
-                {!editData && !selectedAccount?.is_savings_target && (
-                  <div className="pt-7 flex items-center justify-center">
-                    {index === 0 ? (
-                      <button
-                        type="button"
-                        onClick={addNewItemRow}
-                        className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all shadow-sm cursor-pointer"
-                      >
-                        <FaPlus size={12} />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => removeItemRow(e, index)}
-                        className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-950/50 text-red-500 dark:text-red-400 flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/60 transition-all cursor-pointer"
-                      >
-                        <FaMinus size={12} />
-                      </button>
-                    )}
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -551,7 +521,7 @@ const TransactionModal = ({
             </div>
           </div>
 
-          <div className="flex justify-end items-center gap-6 pt-4 border-t border-gray-100 dark:border-gray-800">
+          <div className="flex justify-end items-center gap-4 pt-4 border-t border-gray-100 dark:border-gray-800">
             <button
               type="button"
               onClick={closeModal}
@@ -559,9 +529,26 @@ const TransactionModal = ({
             >
               {t("common.cancel")}
             </button>
+
+            {!editData && (
+              <button
+                type="submit"
+                disabled={isOverCreditLimit}
+                onClick={() => setSaveAndAddAnother(true)}
+                className={`px-5 py-2.5 rounded-xl font-bold transition-all text-sm border ${
+                  isOverCreditLimit
+                    ? 'border-gray-200 text-gray-400 dark:border-gray-700 dark:text-gray-600 cursor-not-allowed'
+                    : 'border-blue-500 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer'
+                }`}
+              >
+                {t("common.save_and_add_another", "Save & Add Another")}
+              </button>
+            )}
+
             <button
               type="submit"
               disabled={isOverCreditLimit}
+              onClick={() => setSaveAndAddAnother(false)}
               className={`px-8 py-2.5 rounded-xl font-bold shadow-md transition-all text-sm ${
                 isOverCreditLimit ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed shadow-none' : 'bg-[#4caf50] text-white hover:bg-green-600 cursor-pointer'
               }`}
