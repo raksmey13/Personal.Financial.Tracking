@@ -392,9 +392,11 @@ const TransactionForm = () => {
 
             <tbody className="text-gray-600 dark:text-slate-300 text-sm font-medium">
 
-              {isShowingPending && paginatedData.map((item) => (
+              {isShowingPending && paginatedData.map((item, index) => {
+                 const displayIndex = (currentPage - 1) * itemsPerPage + (index + 1);
+                 return (
                  <tr key={item.id} className="bg-amber-50/30 dark:bg-amber-950/20 hover:brightness-95 transition-all">
-                    <td className="py-4 px-2 text-center text-gray-400 dark:text-slate-500 font-normal">{item.id}</td>
+                    <td className="py-4 px-2 text-center text-gray-400 dark:text-slate-500 font-normal">{displayIndex}</td>
                     <td className="py-3 px-2 flex justify-center">
                       <div className="w-9 h-9 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-amber-200 dark:border-amber-900/50 shadow-sm text-amber-500">
                         <FaCheck size={12} />
@@ -438,9 +440,10 @@ const TransactionForm = () => {
                       </div>
                     </td>
                  </tr>
-              ))}
+              );})}
 
-              {!isShowingPending && paginatedData.map((item) => {
+              {!isShowingPending && paginatedData.map((item, index) => {
+                const displayIndex = (currentPage - 1) * itemsPerPage + (index + 1);
                 const isSystemOpeningBalance = item.description === "Opening Balance Baseline";
                 const matchedCategory = categories.find(c => c.id === item.category_id);
                 const categoryFullName = getCatName(item.category_id);
@@ -456,7 +459,7 @@ const TransactionForm = () => {
 
                 return (
                   <tr key={item.id} className={`${isPositive ? 'bg-green-50/30 dark:bg-green-950/15' : 'bg-red-50/40 dark:bg-red-950/15'} hover:brightness-95 transition-all`}>
-                    <td className="py-4 px-2 text-center text-gray-400 dark:text-slate-500 font-normal">{item.id}</td>
+                    <td className="py-4 px-2 text-center text-gray-400 dark:text-slate-500 font-normal">{displayIndex}</td>
                     <td className="py-3 px-2 flex justify-center">
                       <div className="w-9 h-9 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-gray-100 dark:border-slate-700 shadow-sm">
                         {finalIconSrc && typeof finalIconSrc === 'string' ? (
@@ -513,7 +516,8 @@ const TransactionForm = () => {
 
         {/* Mobile Card List View */}
         <div className="block md:hidden px-4 py-4 space-y-3 bg-[#fdfefe] dark:bg-slate-900">
-          {paginatedData.map((item) => {
+          {paginatedData.map((item, index) => {
+             const displayIndex = (currentPage - 1) * itemsPerPage + (index + 1);
              const isPending = isShowingPending;
              const isSystemOpeningBalance = item.description === "Opening Balance Baseline";
              const matchedCategory = categories.find(c => c.id === item.category_id);
@@ -543,7 +547,7 @@ const TransactionForm = () => {
                       )}
                     </div>
                     <div>
-                      <p className="text-xs text-gray-400 dark:text-slate-500 font-normal">#{item.id}</p>
+                      <p className="text-xs text-gray-400 dark:text-slate-500 font-normal">#{displayIndex}</p>
                       <h4 className="font-bold text-gray-800 dark:text-slate-100 text-sm">
                         {isSystemOpeningBalance ? t("transactions.starting_balance") : categoryFullName.replace("➔", "»")}
                       </h4>
