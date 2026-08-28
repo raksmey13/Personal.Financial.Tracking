@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { FaEdit, FaRegTrashAlt, FaPlus, FaMinus, FaChevronLeft, FaChevronRight, FaTag, FaWallet, FaCheck, FaTimes } from "react-icons/fa";
+import { FaEdit, FaRegTrashAlt, FaPlus, FaMinus, FaChevronLeft, FaChevronRight, FaTag, FaWallet, FaCheck, FaTimes, FaExclamationTriangle, FaInfoCircle } from "react-icons/fa";
 import { useTranslation } from "react-i18next";
 import TransactionModal from "./TransactionModal";
 import FilterBoard from "./FilterBoard";
@@ -28,6 +28,39 @@ const TransactionForm = () => {
   const [pendingSelections, setPendingSelections] = useState({});
 
   const [isLoading, setIsLoading] = useState(true);
+
+  // 🟢 Styled Modal State (Replaces browser confirm/alert)
+  const [dialogConfig, setDialogConfig] = useState({
+    isOpen: false,
+    type: "confirm", // "confirm" or "alert"
+    title: "",
+    message: "",
+    onConfirm: null
+  });
+
+  const showAlert = (title, message) => {
+    setDialogConfig({
+      isOpen: true,
+      type: "alert",
+      title,
+      message,
+      onConfirm: null
+    });
+  };
+
+  const showConfirm = (title, message, onConfirmAction) => {
+    setDialogConfig({
+      isOpen: true,
+      type: "confirm",
+      title,
+      message,
+      onConfirm: onConfirmAction
+    });
+  };
+
+  const closeDialog = () => {
+    setDialogConfig({ isOpen: false, type: "confirm", title: "", message: "", onConfirm: null });
+  };
 
   const [filters, setFilters] = useState({
     searchTerm: "",
@@ -108,25 +141,38 @@ const TransactionForm = () => {
     }
   }, [activeTab]);
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to permanently delete this transaction?")) {
-      try {
-        const response = await transactionAPI.delete(id);
-        if (response.status === 200) {
-          fetchInitialData();
+  // 🟢 Instant Optimistic Delete
+  const handleDelete = (id) => {
+    showConfirm(
+      "Delete Transaction",
+      "Are you sure you want to permanently delete this transaction?",
+      async () => {
+        closeDialog();
+        // Optimistic UI update: remove instantly from screen
+        setExpenses(prev => prev.filter(tx => tx.id !== id));
+        try {
+          const response = await transactionAPI.delete(id);
+          if (response.status === 200) {
+            fetchInitialData();
+          }
+        } catch (error) {
+          console.error("Axios delete operation failure:", error);
+          showAlert("Error", "Failed to delete transaction on server. Syncing data...");
+          fetchInitialData(); // Re-sync if API failed
         }
-      } catch (error) {
-        console.error("Axios delete operation failure:", error);
       }
-    }
+    );
   };
 
   const handleApprovePending = async (pendingId) => {
     const selectedCategoryId = pendingSelections[pendingId];
     if (!selectedCategoryId) {
-      alert("Please select a category first!");
+      showAlert("Action Required", "Please select a category first!");
       return;
     }
+
+    // Optimistic UI update
+    setPendingList(prev => prev.filter(item => item.id !== pendingId));
 
     try {
       await axios.post(
@@ -142,23 +188,32 @@ const TransactionForm = () => {
       fetchInitialData();
     } catch (error) {
       console.error("Failed to approve transaction:", error);
-      alert("Approval failed. Check console.");
+      showAlert("Approval Failed", "Transaction approval failed. Refreshing list...");
+      fetchPendingData();
     }
   };
 
-  const handleRejectPending = async (pendingId) => {
-    if (window.confirm("Reject and remove this item from your pending inbox?")) {
-      try {
-        await axios.delete(
-          `https://personal-financial-tracking.onrender.com/budgets/pending/${pendingId}`,
-          getAuthHeaders()
-        );
-        fetchPendingData();
-      } catch (error) {
-        console.error("Failed to reject pending transaction:", error);
-        alert("Failed to delete pending item.");
+  const handleRejectPending = (pendingId) => {
+    showConfirm(
+      "Reject Pending Item",
+      "Reject and remove this item from your pending inbox?",
+      async () => {
+        closeDialog();
+        // Optimistic UI update
+        setPendingList(prev => prev.filter(item => item.id !== pendingId));
+        try {
+          await axios.delete(
+            `https://personal-financial-tracking.onrender.com/budgets/pending/${pendingId}`,
+            getAuthHeaders()
+          );
+          fetchPendingData();
+        } catch (error) {
+          console.error("Failed to reject pending transaction:", error);
+          showAlert("Error", "Failed to delete pending item.");
+          fetchPendingData();
+        }
       }
-    }
+    );
   };
 
   const closeModal = () => {
@@ -585,6 +640,55 @@ const TransactionForm = () => {
           editData={editingTransaction}
         />
       )}
+
+      {/* 🟢 STYLED MODAL DIALOG FOR CONFIRMATIONS & ALERTS */}
+      {dialogConfig.isOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-[#151D2A] border border-gray-100 dark:border-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${
+                dialogConfig.type === "confirm"
+                  ? "bg-red-50 dark:bg-red-950/40 text-red-500"
+                  : "bg-blue-50 dark:bg-blue-950/40 text-blue-500"
+              }`}>
+                {dialogConfig.type === "confirm" ? <FaExclamationTriangle /> : <FaInfoCircle />}
+              </div>
+              <h3 className="font-bold text-gray-800 dark:text-gray-100 text-base">{dialogConfig.title}</h3>
+            </div>
+
+            <p className="text-gray-600 dark:text-gray-300 text-xs leading-relaxed">
+              {dialogConfig.message}
+            </p>
+
+            <div className="flex justify-end items-center gap-3 pt-2">
+              {dialogConfig.type === "confirm" ? (
+                <>
+                  <button
+                    onClick={closeDialog}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={dialogConfig.onConfirm}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-red-500 hover:bg-red-600 text-white shadow-md transition-all cursor-pointer"
+                  >
+                    Delete
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={closeDialog}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-500 hover:bg-blue-600 text-white shadow-md transition-all cursor-pointer"
+                >
+                  OK
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
