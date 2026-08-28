@@ -123,7 +123,7 @@ const AccountPage = () => {
       currency: formData.currency,
       balance: initialBalanceValue,
       credit_limit: formData.account_type === "Credit Card" ? parseFloat(formData.credit_limit || 0) : 0,
-      payment_due_day: !["Normal", "Savings"].includes(formData.account_type) && formData.payment_due_day ? parseInt(formData.payment_due_day, 10) : null,
+      payment_due_day: !["Normal", "Savings", "Cash"].includes(formData.account_type) && formData.payment_due_day ? parseInt(formData.payment_due_day, 10) : null,
       note: formData.note.trim() || null,
       is_active: true,
       is_savings_target: formData.account_type === "Savings"
@@ -188,7 +188,7 @@ const AccountPage = () => {
   });
 
   const totalAssetsUSD = enhancedAccounts
-    .filter(acc => (acc.account_type === "Normal" || acc.account_type === "Savings") && (acc.currency || "USD") === "USD")
+    .filter(acc => (acc.account_type === "Normal" || acc.account_type === "Savings" || acc.account_type === "Cash") && (acc.currency || "USD") === "USD")
     .reduce((sum, acc) => sum + acc.computedBalance, 0);
 
   const totalLiabilitiesUSD = enhancedAccounts
@@ -196,7 +196,7 @@ const AccountPage = () => {
     .reduce((sum, acc) => sum + Math.abs(acc.computedBalance), 0);
 
   const totalAssetsKHR = enhancedAccounts
-    .filter(acc => (acc.account_type === "Normal" || acc.account_type === "Savings") && acc.currency === "KHR")
+    .filter(acc => (acc.account_type === "Normal" || acc.account_type === "Savings" || acc.account_type === "Cash") && acc.currency === "KHR")
     .reduce((sum, acc) => sum + acc.computedBalance, 0);
 
   const netWorthUSD = totalAssetsUSD - totalLiabilitiesUSD;
@@ -369,11 +369,13 @@ return (
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
                       acc.account_type === "Credit Card" ? "bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400" :
                       acc.account_type === "Loan" ? "bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400" :
-                      acc.account_type === "Savings" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400" : "bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400"
+                      acc.account_type === "Savings" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400" :
+                      acc.account_type === "Cash" ? "bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-400" : "bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400"
                     }`}>
                       {acc.account_type === "Credit Card" ? t("accounts.type_credit") :
                        acc.account_type === "Loan" ? t("accounts.type_loan") :
                        acc.account_type === "Savings" ? t("accounts.type_savings") :
+                       acc.account_type === "Cash" ? t("accounts.type_cash") :
                        t("accounts.type_normal")}
                     </span>
 
@@ -405,10 +407,10 @@ return (
                 <div className="text-right space-y-2">
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-400 block mb-0.5">
-                      {acc.account_type === "Savings" ? t("accounts.accumulated_vault") : acc.account_type === "Normal" ? t("accounts.available_balance") : acc.account_type === "Loan" ? t("accounts.outstanding_balance") : t("accounts.owed_debt")}
+                      {acc.account_type === "Savings" ? t("accounts.accumulated_vault") : ["Normal", "Cash"].includes(acc.account_type) ? t("accounts.available_balance") : acc.account_type === "Loan" ? t("accounts.outstanding_balance") : t("accounts.owed_debt")}
                     </span>
                     <div className={`font-black text-lg tracking-tight ${
-                      ["Normal", "Savings"].includes(acc.account_type)
+                      ["Normal", "Savings", "Cash"].includes(acc.account_type)
                         ? (currentBalance >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400")
                         : "text-red-500 dark:text-red-400"
                     }`}>
@@ -503,6 +505,7 @@ return (
                   onChange={(e) => setFormData({...formData, account_type: e.target.value})}
                 >
                   <option value="Normal">{t("accounts.type_normal")}</option>
+                  <option value="Cash">{t("accounts.type_cash")}</option>
                   <option value="Savings">{t("accounts.type_savings")}</option>
                   <option value="Credit Card">{t("accounts.type_credit")}</option>
                   <option value="Loan">{t("accounts.type_loan")}</option>
@@ -536,7 +539,7 @@ return (
               </div>
             )}
 
-            {!["Normal", "Savings"].includes(formData.account_type) && (
+            {!["Normal", "Savings", "Cash"].includes(formData.account_type) && (
               <div className="animate-in fade-in duration-150 relative" ref={dayDropdownRef}>
                 <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
                   {formData.account_type === "Credit Card" ? t("accounts.statement_due_day") : t("accounts.monthly_repayment_day")}
@@ -578,7 +581,7 @@ return (
 
             <div>
               <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
-                {["Normal", "Savings"].includes(formData.account_type)
+                {["Normal", "Savings", "Cash"].includes(formData.account_type)
                   ? (editingAccountId ? t("accounts.current_balance") : t("accounts.initial_balance"))
                   : (editingAccountId ? t("accounts.current_owed_debt") : t("accounts.starting_debt"))
                 }
@@ -598,7 +601,7 @@ return (
                 value={formData.note}
                 placeholder={t("accounts.note_placeholder")}
                 rows="2"
-                className="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1E293B] text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2.5 focus:outline-none resize-none"
+                className="w-full border border-gray-300 dark:border-gray-700 bg-[#white] dark:bg-[#1E293B] text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2.5 focus:outline-none resize-none"
                 onChange={(e) => setFormData({...formData, note: e.target.value})}
               />
             </div>
