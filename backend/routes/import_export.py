@@ -508,7 +508,6 @@ async def import_file(
             imported_count += 1
         except Exception as err:
             errors.append(f"Row {line_num}: Failed to parse -> {str(err)}")
-
     if imported_count > 0:
         session.commit()
     return {
