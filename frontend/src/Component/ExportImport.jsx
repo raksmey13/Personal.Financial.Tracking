@@ -56,18 +56,22 @@ const ExportImport = ({ mode }) => {
     setIsExportingPdf(true);
     try {
       const element = reportRef.current;
+      if (!element) {
+        throw new Error("Export container element not found");
+      }
+
       const options = {
-        margin: [0.4, 0.4, 0.4, 0.4],
-        filename: `transaction_summary_${pdfPeriod}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'in', format: 'letter', orientation: pdfTwoColumn ? 'landscape' : 'portrait' }
+        margin:       [0.4, 0.4, 0.4, 0.4],
+        filename:     `transaction_summary_${pdfPeriod}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true, logging: false },
+        jsPDF:        { unit: 'in', format: 'letter', orientation: pdfTwoColumn ? 'landscape' : 'portrait' }
       };
 
       await html2pdf().set(options).from(element).save();
     } catch (err) {
       console.error("Failed to export PDF:", err);
-      alert(t("export_import.alert_pdf_failed"));
+      alert(t("export_import.alert_pdf_failed") || "Failed to generate PDF export.");
     } finally {
       setIsExportingPdf(false);
     }
@@ -412,4 +416,5 @@ const ExportImport = ({ mode }) => {
     </div>
   );
 };
+
 export default ExportImport;
