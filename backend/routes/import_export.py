@@ -17,46 +17,20 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
-# --- REPORTLAB IMPORTS FOR PDF GENERATION ---
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+# --- WEASYPRINT IMPORT FOR PDF GENERATION ---
+from weasyprint import HTML
 
 from .auth import get_current_user
 
 router = APIRouter(prefix="/export-import", tags=["Export & Import"])
 
 # =========================================================
-# KHMER FONT REGISTRATION
+# KHMER FONT PATH SETUP
 # =========================================================
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 
 font_path = os.path.join(BACKEND_DIR, "fonts", "NotoSansKhmer-Regular.ttf")
-
-HAS_KHMER_FONT = False
-if os.path.exists(font_path):
-    try:
-        pdfmetrics.registerFont(TTFont('NotoSansKhmer', font_path))
-        HAS_KHMER_FONT = True
-    except Exception as e:
-        print(f"Failed to register TTFont: {e}")
-
-
-# Helper function to render text with Khmer font ONLY when Khmer characters exist
-def create_cell_paragraph(text: str, base_style_latin: ParagraphStyle, base_style_khmer: ParagraphStyle) -> Paragraph:
-    if not text:
-        return Paragraph("—", base_style_latin)
-
-    # Check if text contains Khmer Unicode range (\u1780-\u17FF)
-    contains_khmer = bool(re.search(r'[\u1780-\u17FF]', str(text)))
-
-    if contains_khmer and HAS_KHMER_FONT:
-        return Paragraph(str(text), base_style_khmer)
-    return Paragraph(str(text), base_style_latin)
 
 
 # =========================================================
@@ -254,7 +228,7 @@ def export_csv(
 
 
 # =========================================================
-# 3. EXPORT TRANSACTIONS TO PDF
+# 3. EXPORT TRANSACTIONS TO PDF (WEASYPRINT FOR KHMER CTL)
 # =========================================================
 @router.get("/pdf")
 def export_pdf(
@@ -290,62 +264,7 @@ def export_pdf(
     statement = statement.order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
     transactions = session.exec(statement).all()
 
-    pdf_buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        pdf_buffer,
-        pagesize=letter,
-        rightMargin=36,
-        leftMargin=36,
-        topMargin=36,
-        bottomMargin=36
-    )
-
-    styles = getSampleStyleSheet()
-    story = []
-
-    title_style = ParagraphStyle(
-        'DocTitle',
-        parent=styles['Heading1'],
-        fontSize=18,
-        leading=22,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#1E293B'),
-        spaceAfter=12
-    )
-
-    # 🟢 DUAL STYLES FOR DYNAMIC FONT SWITCHING
-    style_latin = ParagraphStyle(
-        'CellLatin',
-        parent=styles['Normal'],
-        fontSize=8,
-        leading=10,
-        fontName='Helvetica',
-        textColor=colors.HexColor('#1E293B')
-    )
-    style_khmer = ParagraphStyle(
-        'CellKhmer',
-        parent=styles['Normal'],
-        fontSize=8,
-        leading=10,
-        fontName='NotoSansKhmer' if HAS_KHMER_FONT else 'Helvetica',
-        textColor=colors.HexColor('#1E293B')
-    )
-
-    cell_header_style = ParagraphStyle(
-        'HeaderCellText',
-        parent=styles['Normal'],
-        fontSize=9,
-        leading=11,
-        fontName='Helvetica-Bold',
-        textColor=colors.whitesmoke
-    )
-
-    story.append(Paragraph(f"Transaction Summary Report ({period})", title_style))
-    story.append(Spacer(1, 10))
-
-    headers = ["Date", "Account", "Category", "Type", "Amount", "Description"]
-    table_data = [[Paragraph(h, cell_header_style) for h in headers]]
-
+    rows_html = ""
     for tx in transactions:
         account = session.get(Account, tx.account_id)
         category = session.get(Category, tx.category_id) if tx.category_id else None
@@ -353,9 +272,9 @@ def export_pdf(
         acc_name = account.account_name if account else "N/A"
         curr = str(account.currency if account else "USD").strip().upper()
         cat_name = category.name if category else "Uncategorized"
-        raw_desc = tx.description or ""
+        raw_desc = tx.description or "—"
 
-        symbol = "៛" if (curr == "KHR" and HAS_KHMER_FONT) else ("KHR" if curr == "KHR" else "$")
+        symbol = "៛" if curr == "KHR" else "$"
 
         raw_amount = abs(tx.amount)
         if curr == "KHR":
@@ -365,35 +284,92 @@ def export_pdf(
 
         formatted_amount = f"-{symbol_fmt}" if tx.type.lower() == "expense" else f"+{symbol_fmt}"
 
-        table_data.append([
-            create_cell_paragraph(str(tx.transaction_date), style_latin, style_khmer),
-            create_cell_paragraph(acc_name, style_latin, style_khmer),
-            create_cell_paragraph(cat_name, style_latin, style_khmer),
-            create_cell_paragraph(tx.type.capitalize(), style_latin, style_khmer),
-            create_cell_paragraph(formatted_amount, style_latin, style_khmer),
-            create_cell_paragraph(raw_desc, style_latin, style_khmer)
-        ])
+        rows_html += f"""
+        <tr>
+            <td>{tx.transaction_date}</td>
+            <td>{acc_name}</td>
+            <td>{cat_name}</td>
+            <td>{tx.type.capitalize()}</td>
+            <td>{formatted_amount}</td>
+            <td>{raw_desc}</td>
+        </tr>
+        """
 
-    col_widths = [65, 85, 95, 55, 75, 165]
+    font_url = f"file://{font_path}" if os.path.exists(font_path) else ""
 
-    pdf_table = Table(table_data, colWidths=col_widths)
-    pdf_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#5C6BC0')),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
-    ]))
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8"/>
+        <style>
+            @page {{
+                size: letter;
+                margin: 36pt;
+            }}
+            @font-face {{
+                font-family: 'NotoSansKhmer';
+                src: url('{font_url}');
+            }}
+            body {{
+                font-family: 'NotoSansKhmer', 'Helvetica', sans-serif;
+                color: #1E293B;
+                margin: 0;
+                padding: 0;
+            }}
+            h1 {{
+                font-size: 18pt;
+                color: #1E293B;
+                margin-bottom: 12pt;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10pt;
+            }}
+            th {{
+                background-color: #5C6BC0;
+                color: white;
+                font-size: 9pt;
+                padding: 6pt;
+                text-align: left;
+            }}
+            td {{
+                font-size: 8pt;
+                padding: 5pt 6pt;
+                border-bottom: 0.5pt solid #E2E8F0;
+            }}
+            tr:nth-child(even) {{
+                background-color: #F8FAFC;
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>Transaction Summary Report ({period})</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 12%;">Date</th>
+                    <th style="width: 16%;">Account</th>
+                    <th style="width: 18%;">Category</th>
+                    <th style="width: 10%;">Type</th>
+                    <th style="width: 14%;">Amount</th>
+                    <th style="width: 30%;">Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows_html if rows_html else "<tr><td colspan='6' style='text-align:center;'>No records found</td></tr>"}
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
 
-    story.append(pdf_table)
-    doc.build(story)
-
-    pdf_buffer.seek(0)
+    pdf_bytes = HTML(string=html_content).write_pdf()
     filename = f"transaction_summary_{period}.pdf"
 
     return StreamingResponse(
-        pdf_buffer,
+        io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
