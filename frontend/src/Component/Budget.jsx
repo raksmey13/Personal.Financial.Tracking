@@ -726,7 +726,7 @@ const BudgetPage = ({ categories: propCategories = [] }) => {
                         className="w-full p-3 text-sm border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1E293B] text-gray-800 dark:text-gray-100 rounded-xl pl-8 outline-none focus:bg-white dark:focus:bg-[#151D2A] focus:border-green-400 font-black transition-colors"
                         required={formData.strategy_type !== "master_allocation"}
                       />
-                      <span className="absolute left-3 text-gray-400 dark:text-gray-500 font-bold text-sm">
+                      <span className="absolute left-3 text-gray-400 dark:text-gray-500 font-black text-sm">
                         {formData.currency === "KHR" ? "៛" : "$"}
                       </span>
                     </div>
