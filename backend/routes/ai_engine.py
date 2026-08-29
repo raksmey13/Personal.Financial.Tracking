@@ -81,10 +81,12 @@ def call_gemini_sdk(
 ) -> str:
     contents = []
     if image_bytes:
+        # Dynamically detect PNG vs JPEG bytes from Telegram
+        mime = "image/png" if image_bytes.startswith(b'\x89PNG') else "image/jpeg"
         contents.append(
             types.Part.from_bytes(
                 data=image_bytes,
-                mime_type="image/jpeg"
+                mime_type=mime
             )
         )
     contents.append(prompt)
@@ -195,9 +197,9 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
 
     CRITICAL EXTRACTION RULES:
     1. "amount" & "currency": Extract ONLY the main top header transaction amount and currency symbol.
-       - Focus strictly on the large, prominent amount displayed at the top of the receipt header (e.g., "-0.50 USD" -> amount: 0.50, currency: "USD").
-       - IGNORE any lower detail rows like "Original amount:", "Exchange rate:", or "Converted amount:".
-    2. "merchant": Identify the recipient, seller, store, or vendor name from "Seller:", "Paid To:", "Transfer to", or header title.
+       - Extract the positive numeric value of the transaction amount (e.g., "-0.87 USD" -> amount: 0.87, currency: "USD"). Never output a negative number.
+       - IGNORE lower detail rows like "Original amount:", "Exchange rate:", or "Converted amount:".
+    2. "merchant": Identify the recipient, seller, store, or vendor name from "Seller:", "Paid To:", "Transfer to", or header title (e.g., "MAI CHANTHIN").
        - NEVER use bank branding as the merchant name.
        - NEVER use the "From account" name (sender name).
     3. "bank_name": SCAN THE TOP HEADER OR BOTTOM FOOTER for the ISSUING/SENDER bank app logo (e.g., "ABA", "WING", "CANADIA", "ACLEDA", "BAKONG").
@@ -227,7 +229,8 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
         resp_text = call_gemini_sdk(prompt=prompt, image_bytes=image_bytes, json_schema=json_schema)
         parsed = GeminiParsedTransaction.model_validate_json(resp_text)
 
-        amt = Decimal(str(round(parsed.amount, 2))) if parsed.amount else None
+        # Force positive Decimal amount
+        amt = Decimal(str(abs(round(parsed.amount, 2)))) if parsed.amount else None
         merchant_name = parsed.merchant.strip().upper() if parsed.merchant else "UNKNOWN MERCHANT"
         bank_name = getattr(parsed, 'bank_name', '').strip().upper()
 
@@ -812,7 +815,8 @@ async def handle_telegram_webhook(payload: dict, session: SessionDep):
             return {"status": "ignored"}
 
         chat_id = message["chat"]["id"]
-        text = message.get("text", "")
+        # Fallback to caption when text is absent on photo messages
+        text = message.get("text") or message.get("caption") or ""
         photo = message.get("photo")
 
         # 1. Fallback to active user or lookup by telegram_id
