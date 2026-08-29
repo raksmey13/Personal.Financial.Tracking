@@ -36,11 +36,10 @@ UPLOAD_DIR = "static/avatars"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ---------------------------------------------------------
-# TEMPORARY IN-MEMORY STORAGE FOR UNVERIFIED SIGNUPS & RESETS
+# TEMPORARY IN-MEMORY STORAGE FOR UNVERIFIED SIGNUPS
 # Data stays here and is ONLY written to the DB after OTP verify
 # ---------------------------------------------------------
 pending_registrations: Dict[str, Any] = {}
-password_resets: Dict[str, Any] = {}
 
 
 # ---------------------------------------------------------
@@ -183,16 +182,6 @@ class UserProfileUpdate(BaseModel):
 
 class UserPasswordUpdate(BaseModel):
     current_password: str
-    new_password: str
-
-
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-
-class ResetPasswordRequest(BaseModel):
-    email: EmailStr
-    otp_code: str
     new_password: str
 
 
@@ -448,76 +437,3 @@ def change_password(
     session.commit()
 
     return {"message": "Access keys rotated and committed successfully."}
-
-
-# 🚀 9. REQUEST PASSWORD RESET OTP
-@router.post("/forgot-password")
-async def forgot_password(request: ForgotPasswordRequest, session: SessionDep):
-    user = session.exec(select(User).where(User.email == request.email)).first()
-
-    if user and user.is_verified:
-        otp_code = str(random.randint(100000, 999999))
-        password_resets[request.email] = {
-            "otp_code": otp_code,
-            "expires_at": datetime.utcnow() + timedelta(minutes=15)
-        }
-
-        try:
-            params: resend.Emails.SendParams = {
-                "from": "PFTrack <no-reply@pftrack.site>",
-                "to": [request.email],
-                "subject": "PFTrack Password Reset Code",
-                "html": f"""
-                    <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px;">
-                        <h2 style="color: #1e293b; text-align: center;">Reset Your Password</h2>
-                        <p style="color: #475569; text-align: center;">Your 6-digit verification code to reset your password is:</p>
-                        <div style="background-color: #f1f5f9; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0;">
-                            <h1 style="color: #ef4444; letter-spacing: 4px; font-size: 32px; margin: 0;">{otp_code}</h1>
-                        </div>
-                        <p style="color: #64748b; font-size: 14px; text-align: center;">If you did not request this, please ignore this email.</p>
-                    </div>
-                """,
-            }
-            resend.Emails.send(params)
-        except Exception as e:
-            print(f"❌ RESEND DISPATCH FAILED: {str(e)}")
-            raise HTTPException(status_code=500, detail="Failed to send reset email.")
-
-    return {"message": "If the email is registered, a password reset code has been sent."}
-
-
-# 🚀 10. VERIFY OTP AND SET NEW PASSWORD
-@router.post("/reset-password")
-def reset_password(request: ResetPasswordRequest, session: SessionDep):
-    reset_data = password_resets.get(request.email)
-
-    if not reset_data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No password reset request found for this email."
-        )
-
-    if datetime.utcnow() > reset_data["expires_at"]:
-        del password_resets[request.email]
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Reset code has expired. Please request a new one."
-        )
-
-    if reset_data["otp_code"] != request.otp_code.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OTP verification code."
-        )
-
-    user = session.exec(select(User).where(User.email == request.email)).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
-
-    user.hashed_password = hash_password(request.new_password)
-    session.add(user)
-    session.commit()
-
-    del password_resets[request.email]
-
-    return {"message": "Password reset successfully. You may now log in with your new password."}
