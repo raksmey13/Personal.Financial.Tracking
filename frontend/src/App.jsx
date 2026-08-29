@@ -28,7 +28,7 @@ import {
   FaCog, FaChevronRight, FaSignOutAlt, FaUserShield, FaMoon, FaSun
 } from "react-icons/fa";
 
-// --- 1. Sidebar Component ---
+
 const Sidebar = ({ onLogout, currentUser, isDarkMode, setIsDarkMode }) => {
   const { t } = useTranslation();
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -193,7 +193,7 @@ const Sidebar = ({ onLogout, currentUser, isDarkMode, setIsDarkMode }) => {
   );
 };
 
-// --- 2. Navbar Component ---
+
 const Navbar = ({ notifications, setNotifications, token, currentUser }) => {
   const { t } = useTranslation();
   const location = useLocation();
@@ -249,7 +249,7 @@ const Navbar = ({ notifications, setNotifications, token, currentUser }) => {
   );
 };
 
-// --- 3. Protected Admin Route Wrapper ---
+
 const AdminRoute = ({ currentUser, children }) => {
   if (!currentUser) return null;
   if (!currentUser.is_admin) {
@@ -258,7 +258,7 @@ const AdminRoute = ({ currentUser, children }) => {
   return children;
 };
 
-// --- 4. Protected User Route Wrapper ---
+
 const ProtectedUserRoute = ({ token, children }) => {
   if (!token) {
     return <Navigate to="/login" replace />;
@@ -266,7 +266,7 @@ const ProtectedUserRoute = ({ token, children }) => {
   return children;
 };
 
-// --- 5. Main App Export ---
+
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem("token") || null);
   const [currentUser, setCurrentUser] = useState(null);

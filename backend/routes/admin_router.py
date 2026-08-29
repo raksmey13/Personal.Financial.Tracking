@@ -18,9 +18,8 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-# =========================================================
-# 1. GLOBAL SYSTEM ANALYTICS
-# =========================================================
+
+#  GLOBAL SYSTEM ANALYTICS
 @router.get("/stats")
 def get_admin_stats(session: SessionDep, _: User = Depends(require_admin)):
     """Fetches high-level system metrics for the admin dashboard."""
@@ -37,15 +36,14 @@ def get_admin_stats(session: SessionDep, _: User = Depends(require_admin)):
     }
 
 
-# =========================================================
-# 2. USER MANAGEMENT
-# =========================================================
+
+#  USER MANAGEMENT
+
 @router.get("/users")
 def list_all_users(session: SessionDep, _: User = Depends(require_admin)):
     """Lists all registered users in the platform."""
     users = session.exec(select(User).order_by(User.id.asc())).all()
 
-    # Return user details without exposing hashed_password
     return [
         {
             "id": u.id,
@@ -62,7 +60,7 @@ def list_all_users(session: SessionDep, _: User = Depends(require_admin)):
 
 @router.patch("/users/{user_id}/toggle-active")
 def toggle_user_active(user_id: int, session: SessionDep, current_admin: User = Depends(require_admin)):
-    """Activates or deactivates a user account."""
+
     if user_id == current_admin.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

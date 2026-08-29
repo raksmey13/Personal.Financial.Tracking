@@ -73,17 +73,12 @@ class ChatResponse(BaseModel):
     reply: str
 
 
-# --- Vertex AI Caller ---
 def call_gemini_sdk(
         prompt: str,
         image_bytes: Optional[bytes] = None,
         json_schema: Optional[dict] = None,
         system_instruction: Optional[str] = None
 ) -> str:
-    """
-    Executes Gemini via the official google-genai SDK,
-    authenticating natively via GOOGLE_APPLICATION_CREDENTIALS.
-    """
     contents = []
     if image_bytes:
         contents.append(
@@ -150,7 +145,6 @@ def extract_text_from_image_bytes(image_bytes: bytes) -> str:
 def parse_khqr_receipt(text: str):
     amount = None
 
-    # Extract transaction amount
     amount_match = re.search(
         r'(?:amount|total|paid|sum|trx\s*amount)?\s*:?\s*[\-—\+]?\s*\$?\s*(\d+(?:[\.\,]\d{1,2})?)\s*(?:USD|\$|KHR|៛)?',
         text, re.IGNORECASE
@@ -170,7 +164,6 @@ def parse_khqr_receipt(text: str):
 
     raw_name = "UNKNOWN MERCHANT"
 
-    # Support Unicode (Khmer, Chinese, Latin) and common transfer labels (To, Paid To, Receiver, Beneficiary)
     name_match = re.search(
         r'(?:transfer\s+to|paid\s+to|to\s+account|beneficiary|receiver|merchant\s+name|merchant|to)\s*:?\s*([^\n\r]+)',
         text, re.IGNORECASE
@@ -179,7 +172,6 @@ def parse_khqr_receipt(text: str):
     if name_match:
         extracted = name_match.group(1).strip()
 
-        # Safely remove trailing metadata keywords without wiping out the beneficiary name
         cleaned = re.sub(
             r'\b(TRX\.?\s*ID|ORIGINAL\s+AMOUNT|REFERENCE\s*#|TRANSACTION\s+DATE|REMARK|DATE)\b.*',
             '', extracted, flags=re.IGNORECASE
@@ -197,11 +189,7 @@ def parse_khqr_receipt(text: str):
     return amount, raw_name, raw_account_num
 
 
-# 🟢 Direct Vision Function: Strict Top Header Amount & Sender Bank Extraction
 def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal], str, str, str]:
-    """
-    Passes image bytes directly to Gemini Vision to extract top header amount, merchant name, currency, and issuing bank.
-    """
     prompt = """
     Analyze this payment receipt or bank transfer screenshot visually.
 
@@ -259,7 +247,6 @@ def process_receipt_image_direct(image_bytes: bytes) -> tuple[Optional[Decimal],
         return None, "UNKNOWN MERCHANT", "USD", ""
 
 
-# --- Unified Processor Function ---
 def process_transaction_input(
         user_id: int,
         raw_text: str = "",
@@ -274,7 +261,8 @@ def process_transaction_input(
 
     if image_bytes:
         amount, raw_name, extracted_currency, extracted_bank = process_receipt_image_direct(image_bytes)
-        logger.info(f"📸 [Vision Extracted]: Merchant='{raw_name}', Amount={amount} {extracted_currency}, Bank='{extracted_bank}'")
+        logger.info(
+            f"📸 [Vision Extracted]: Merchant='{raw_name}', Amount={amount} {extracted_currency}, Bank='{extracted_bank}'")
 
     if not image_bytes and raw_text:
         is_receipt = any(
@@ -356,7 +344,6 @@ def process_transaction_input(
             if db_acc:
                 matched_account_id = db_acc.id
 
-        # 🟢 WORD MATCH WITH TYPE PRIORITIZATION & CONTAINMENT CHECK
         if not matched_account_id:
             full_search_text = f"{raw_name} {extracted_bank}".lower()
             potential_matches = []
@@ -371,7 +358,8 @@ def process_transaction_input(
                     .strip()
                 )
 
-                if clean_acc_name and (clean_acc_name in full_search_text or (extracted_bank and clean_acc_name in extracted_bank.lower())):
+                if clean_acc_name and (clean_acc_name in full_search_text or (
+                        extracted_bank and clean_acc_name in extracted_bank.lower())):
                     potential_matches.append(acc)
 
             if len(potential_matches) == 1:
@@ -379,15 +367,16 @@ def process_transaction_input(
             elif len(potential_matches) > 1:
                 is_credit_receipt = any(k in full_search_text for k in ["credit", "card", "mastercard", "visa"])
                 if is_credit_receipt:
-                    credit_acc = next((a for a in potential_matches if getattr(a, "account_type", "").lower() in ["credit", "credit card"]), None)
+                    credit_acc = next((a for a in potential_matches if
+                                       getattr(a, "account_type", "").lower() in ["credit", "credit card"]), None)
                     if credit_acc:
                         matched_account_id = credit_acc.id
                 else:
-                    normal_acc = next((a for a in potential_matches if getattr(a, "account_type", "").lower() == "normal"), None)
+                    normal_acc = next(
+                        (a for a in potential_matches if getattr(a, "account_type", "").lower() == "normal"), None)
                     if normal_acc:
                         matched_account_id = normal_acc.id
 
-        # 🟢 AMBIGUITY CHECK: Force Inline Keyboard if no string containment match succeeded
         if not matched_account_id:
             all_active_accounts = session.exec(
                 select(Account).where(Account.user_id == user_id, Account.is_active == True)
@@ -478,7 +467,8 @@ def process_transaction_input(
             ))
             session.commit()
 
-            return {"status": "success", "message": f"📥 Staged {symbol}{clean_amount:,.2f} for '{raw_name}' under account {acc_obj.account_name if acc_obj else ''} in Pending Inbox!{balance_warning}"}
+            return {"status": "success",
+                    "message": f"📥 Staged {symbol}{clean_amount:,.2f} for '{raw_name}' under account {acc_obj.account_name if acc_obj else ''} in Pending Inbox!{balance_warning}"}
 
 
 # --- REST API Endpoints ---
@@ -568,18 +558,16 @@ async def scan_receipt_image(
         resp_text = call_gemini_sdk(prompt=prompt, image_bytes=image_bytes, json_schema=json_schema)
         parsed = ParsedTransactionResult.model_validate_json(resp_text)
 
-        # 🟢 1. MATCH OR FALLBACK ACCOUNT
         user_accounts = session.exec(
             select(Account).where(Account.user_id == current_user.id, Account.is_active == True)
         ).all()
 
         matched_acc = None
         if user_accounts:
-            # Try to match extracted currency or bank name in account title
-            matched_acc = next((a for a in user_accounts if parsed.currency.upper() == a.currency.upper()), user_accounts[0])
+            matched_acc = next((a for a in user_accounts if parsed.currency.upper() == a.currency.upper()),
+                               user_accounts[0])
 
         if matched_acc and parsed.amount:
-            # 🟢 2. STAGE TRANSACTION IN PENDING INBOX
             pending = PendingTransaction(
                 user_id=current_user.id,
                 raw_beneficiary_name=parsed.clean_merchant.upper(),
@@ -591,7 +579,6 @@ async def scan_receipt_image(
             )
             session.add(pending)
 
-            # 🟢 3. TRIGGER UNREAD NOTIFICATION FOR USER REVIEW
             symbol = "៛" if parsed.currency == "KHR" else "$"
             session.add(Notification(
                 user_id=current_user.id,
@@ -605,7 +592,6 @@ async def scan_receipt_image(
                 expires_at=datetime.utcnow() + timedelta(days=14)
             ))
 
-        # 🟢 4. LOG AUDIT ENTRY IN AIProcessingLog
         log_entry = AIProcessingLog(
             user_id=current_user.id,
             raw_input_text=f"Web Receipt Upload: {file.filename}",
@@ -647,10 +633,12 @@ def handle_ui_chat_assistant(
         user_budgets = session.exec(
             select(Budget).where(Budget.user_id == current_user.id, Budget.is_active == True)
         ).all()
-        budget_summary = [f"{b.name or 'Budget'}: Limit = ${b.monthly_limit:,.2f}" for b in user_budgets] if user_budgets else ["None"]
+        budget_summary = [f"{b.name or 'Budget'}: Limit = ${b.monthly_limit:,.2f}" for b in
+                          user_budgets] if user_budgets else ["None"]
 
         pending_count = len(session.exec(
-            select(PendingTransaction).where(PendingTransaction.user_id == current_user.id, PendingTransaction.status == "pending")
+            select(PendingTransaction).where(PendingTransaction.user_id == current_user.id,
+                                             PendingTransaction.status == "pending")
         ).all())
 
         unread_notifications = len(session.exec(
@@ -715,7 +703,8 @@ def handle_ui_chat_assistant(
                     for tx in recent_txs:
                         acc = session.get(Account, tx.account_id)
                         symbol = "៛" if acc and acc.currency == "KHR" else "$"
-                        lines.append(f"• **{tx.transaction_date}**: {'+' if tx.type == 'income' else '-'}{symbol}{abs(tx.amount):,.2f} (*{tx.description}*)")
+                        lines.append(
+                            f"• **{tx.transaction_date}**: {'+' if tx.type == 'income' else '-'}{symbol}{abs(tx.amount):,.2f} (*{tx.description}*)")
 
                     return ChatResponse(reply="📜 **Recent Database Transactions:**\n\n" + "\n".join(lines))
 
@@ -757,10 +746,14 @@ def handle_ui_chat_assistant(
                     ).all()
 
                     if not pending_items:
-                        return ChatResponse(reply="📥 Your Pending Inbox is completely clear! No staged receipts waiting.")
+                        return ChatResponse(
+                            reply="📥 Your Pending Inbox is completely clear! No staged receipts waiting.")
 
-                    lines = [f"• **{pt.raw_beneficiary_name}**: ${pt.amount:,.2f} (Received: {pt.created_at.strftime('%b %d')})" for pt in pending_items]
-                    return ChatResponse(reply=f"📥 **Pending Inbox ({len(pending_items)} items staged):**\n\n" + "\n".join(lines))
+                    lines = [
+                        f"• **{pt.raw_beneficiary_name}**: ${pt.amount:,.2f} (Received: {pt.created_at.strftime('%b %d')})"
+                        for pt in pending_items]
+                    return ChatResponse(
+                        reply=f"📥 **Pending Inbox ({len(pending_items)} items staged):**\n\n" + "\n".join(lines))
 
                 elif call_name == "create_transaction_tool":
                     amount_val = float(tool_payload.get("amount", 0.0))
@@ -770,7 +763,8 @@ def handle_ui_chat_assistant(
 
                     if amount_val > 0:
                         matched_cat = next((c for c in user_categories if cat_name_arg.lower() in c.name.lower()), None)
-                        matched_acc = next((a for a in user_accounts if acc_name_arg.lower() in a.account_name.lower()), user_accounts[0] if user_accounts else None)
+                        matched_acc = next((a for a in user_accounts if acc_name_arg.lower() in a.account_name.lower()),
+                                           user_accounts[0] if user_accounts else None)
 
                         if matched_acc:
                             new_tx = Transaction(
@@ -804,3 +798,71 @@ def handle_ui_chat_assistant(
         session.rollback()
         logger.error(f"Chat assistant error: {e}")
         return ChatResponse(reply=f"⚠️ Couldn't complete AI request: {str(e)}")
+
+
+# --- Telegram Bot Webhook Endpoint ---
+@router.post("/telegram-webhook")
+async def handle_telegram_webhook(payload: dict, session: SessionDep):
+    """
+    Receives incoming updates from the Telegram Bot API and parses text or photos.
+    """
+    try:
+        message = payload.get("message") or payload.get("edited_message")
+        if not message:
+            return {"status": "ignored"}
+
+        chat_id = message["chat"]["id"]
+        text = message.get("text", "")
+        photo = message.get("photo")
+
+        # 1. Fallback to active user or lookup by telegram_id
+        telegram_user_id = str(message["from"]["id"])
+        user = session.exec(select(User).where(User.is_active == True)).first()
+
+        if not user:
+            logger.warning(f"Unlinked Telegram user ID: {telegram_user_id}")
+            return {"status": "unauthorized_user"}
+
+        image_bytes = None
+
+        # 2. Download photo bytes if the message contains an image/receipt screenshot
+        if photo:
+            file_id = photo[-1]["file_id"]
+            bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+
+            if bot_token:
+                import requests
+                file_info_url = f"https://api.telegram.org/bot{bot_token}/getFile?file_id={file_id}"
+                file_info_resp = requests.get(file_info_url).json()
+
+                if file_info_resp.get("ok"):
+                    file_path = file_info_resp["result"]["file_path"]
+                    download_url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
+                    img_resp = requests.get(download_url)
+                    if img_resp.status_code == 200:
+                        image_bytes = img_resp.content
+
+        # 3. Pass text/image to your transaction processing engine
+        result = process_transaction_input(
+            user_id=user.id,
+            raw_text=text,
+            image_bytes=image_bytes,
+            source="telegram"
+        )
+
+        # 4. Return message response to Telegram user via Bot API
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        if bot_token and "message" in result:
+            import requests
+            send_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            requests.post(send_url, json={
+                "chat_id": chat_id,
+                "text": result["message"],
+                "parse_mode": "Markdown"
+            })
+
+        return {"status": "processed", "result": result}
+
+    except Exception as e:
+        logger.error(f"Telegram Webhook Processing Error: {e}")
+        return {"status": "error", "detail": str(e)}

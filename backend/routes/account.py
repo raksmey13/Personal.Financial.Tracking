@@ -45,9 +45,7 @@ class AccountResponse(BaseModel):
 
 
 def reset_other_savings_targets(session: SessionDep, user_id: int, current_account_id: Optional[int] = None):
-    """
-    Ensures only a single active account acts as the master vault for the 50/30/20 budget sweeps.
-    """
+
     query = select(Account).where(
         Account.user_id == user_id,
         Account.is_savings_target == True
@@ -129,7 +127,7 @@ def create_account(
         if target_account.is_savings_target:
             reset_other_savings_targets(session, current_user.id, current_account_id=target_account.id)
 
-        # 🟢 Classify opening baseline as neutral 'transfer' instead of income/expense
+
         if starting_amount != Decimal("0.00"):
             default_category = session.exec(
                 select(Category).where(
@@ -254,9 +252,7 @@ def delete_account(
     session: SessionDep,
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Soft-deletes the account and removes it as a savings target to prevent 50/30/20 sweep failures.
-    """
+
     db_account = session.exec(
         select(Account).where(Account.id == account_id, Account.user_id == current_user.id)
     ).first()
