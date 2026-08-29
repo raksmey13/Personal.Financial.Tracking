@@ -860,7 +860,6 @@ async def handle_telegram_webhook(payload: dict, session: SessionDep):
                 "text": result["message"],
                 "parse_mode": "Markdown"
             })
-
         return {"status": "processed", "result": result}
 
     except Exception as e:
