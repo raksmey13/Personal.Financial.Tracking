@@ -31,6 +31,10 @@ export const userAPI = {
   updateProfile: (data) => API.put('/users/me', data),
   changePassword: (data) => API.put('/users/me/change-password', data),
 
+  // 🟢 FORGOT & RESET PASSWORD ENDPOINTS
+  requestPasswordReset: (data) => API.post('/users/forgot-password', data),
+  resetPassword: (data) => API.post('/users/reset-password', data),
+
   uploadAvatar: (formData) => API.post('/users/me/avatar', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
