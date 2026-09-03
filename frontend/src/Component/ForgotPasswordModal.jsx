@@ -18,12 +18,13 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
     setLoading(true);
 
     try {
-      // Optional API call if backend endpoint exists
       if (userAPI.requestPasswordReset) {
         await userAPI.requestPasswordReset({ email: email.trim() });
+      } else if (userAPI.forgotPassword) {
+        await userAPI.forgotPassword({ email: email.trim() });
       } else {
-        // Simulated API latency for presentation/demo reliability
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        // Direct fallback call if not explicitly attached in userAPI object
+        await userAPI.post('/users/forgot-password', { email: email.trim() });
       }
       setIsSubmitted(true);
     } catch (err) {
