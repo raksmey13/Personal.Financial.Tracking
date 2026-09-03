@@ -36,10 +36,10 @@ UPLOAD_DIR = "static/avatars"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ---------------------------------------------------------
-# TEMPORARY IN-MEMORY STORAGE FOR UNVERIFIED SIGNUPS
-# Data stays here and is ONLY written to the DB after OTP verify
+# TEMPORARY IN-MEMORY STORAGE FOR UNVERIFIED SIGNUPS & RESETS
 # ---------------------------------------------------------
 pending_registrations: Dict[str, Any] = {}
+password_resets: Dict[str, Any] = {}
 
 
 # ---------------------------------------------------------
@@ -96,13 +96,13 @@ async def send_otp_email(email_to: str, otp_code: str):
             "to": [email_to],
             "subject": "PFTrack Account Verification Code",
             "html": f"""
-                <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; border: 1px solid #e2e8f0; rounded: 8px;">
-                    <h2 style="color: #1e293b; text-align: center;">Welcome to PFTrack!</h2>
+                <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <h2 style="color: #1e293b; text-align: center;">PFTrack Security Code</h2>
                     <p style="color: #475569; text-align: center;">Your 6-digit OTP verification code is:</p>
                     <div style="background-color: #f1f5f9; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0;">
                         <h1 style="color: #3D5AFE; letter-spacing: 4px; font-size: 32px; margin: 0;">{otp_code}</h1>
                     </div>
-                    <p style="color: #64748b; font-size: 14px; text-align: center;">This code is required to activate your account. Do not share it with anyone.</p>
+                    <p style="color: #64748b; font-size: 14px; text-align: center;">This code is required to complete your action. Do not share it with anyone.</p>
                 </div>
             """,
         }
@@ -185,6 +185,16 @@ class UserPasswordUpdate(BaseModel):
     new_password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp_code: str
+    new_password: str
+
+
 # ---------------------------------------------------------
 # AUTHENTICATION ENDPOINTS
 # ---------------------------------------------------------
@@ -192,7 +202,6 @@ class UserPasswordUpdate(BaseModel):
 # 🚀 1. ACCOUNT REGISTRATION (TEMPORARY MEMORY STORAGE)
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(signup_data: SignupRequest, session: SessionDep):
-    # Ensure they aren't already fully registered in the actual database
     existing_email = session.exec(select(User).where(User.email == signup_data.email)).first()
     if existing_email:
         raise HTTPException(status_code=400, detail="Email is already registered.")
@@ -200,7 +209,6 @@ async def signup(signup_data: SignupRequest, session: SessionDep):
     hashed_pw = hash_password(signup_data.password)
     otp_code = str(random.randint(100000, 999999))
 
-    # Save to server memory INSTEAD of Database
     pending_registrations[signup_data.email] = {
         "first_name": signup_data.first_name,
         "last_name": signup_data.last_name,
@@ -210,7 +218,6 @@ async def signup(signup_data: SignupRequest, session: SessionDep):
         "expires_at": datetime.utcnow() + timedelta(minutes=15)
     }
 
-    # Dispatch email
     await send_otp_email(signup_data.email, otp_code)
 
     return {
@@ -242,7 +249,6 @@ def verify_otp(verify_data: VerifyOTPRequest, session: SessionDep):
             detail="Invalid OTP code. Verification failed."
         )
 
-    # ✅ OTP IS CORRECT: Now we finally insert everything into the database
     new_user = User(
         email=pending_user["email"],
         hashed_password=pending_user["hashed_password"],
@@ -262,7 +268,6 @@ def verify_otp(verify_data: VerifyOTPRequest, session: SessionDep):
     provision_user_default_categories(session, new_user.id)
     session.commit()
 
-    # Clean up the memory storage for this user
     del pending_registrations[verify_data.email]
 
     return {"message": "Account created and verified successfully! You may now log in."}
@@ -274,19 +279,16 @@ async def resend_otp(resend_data: ResendOTPRequest, session: SessionDep):
     pending_user = pending_registrations.get(resend_data.email)
 
     if not pending_user:
-        # Let's also check if they are already fully verified in the actual DB
         existing_user = session.exec(select(User).where(User.email == resend_data.email)).first()
         if existing_user and existing_user.is_verified:
             raise HTTPException(status_code=400, detail="Account is already registered and verified. Please log in.")
 
         raise HTTPException(status_code=404, detail="No pending registration found. Please sign up first.")
 
-    # Generate new OTP and reset timer
     new_otp = str(random.randint(100000, 999999))
     pending_registrations[resend_data.email]["otp_code"] = new_otp
     pending_registrations[resend_data.email]["expires_at"] = datetime.utcnow() + timedelta(minutes=15)
 
-    # Dispatch email
     await send_otp_email(resend_data.email, new_otp)
 
     return {"message": "A new OTP has been sent to your email."}
@@ -437,3 +439,58 @@ def change_password(
     session.commit()
 
     return {"message": "Access keys rotated and committed successfully."}
+
+
+# 🚀 9. FORGOT PASSWORD (DISPATCH OTP)
+@router.post("/forgot-password")
+async def forgot_password(request_data: ForgotPasswordRequest, session: SessionDep):
+    user = session.exec(select(User).where(User.email == request_data.email)).first()
+
+    if not user:
+        return {"message": "If that email is registered, a password reset OTP has been sent."}
+
+    otp_code = str(random.randint(100000, 999999))
+    password_resets[request_data.email] = {
+        "otp_code": otp_code,
+        "expires_at": datetime.utcnow() + timedelta(minutes=15)
+    }
+
+    await send_otp_email(request_data.email, otp_code)
+    return {"message": "If that email is registered, a password reset OTP has been sent."}
+
+
+# 🚀 10. RESET PASSWORD (VERIFY OTP & UPDATE DB)
+@router.post("/reset-password")
+def reset_password(reset_data: ResetPasswordRequest, session: SessionDep):
+    reset_entry = password_resets.get(reset_data.email)
+
+    if not reset_entry:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No password reset request found or OTP expired."
+        )
+
+    if datetime.utcnow() > reset_entry["expires_at"]:
+        del password_resets[reset_data.email]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP code has expired. Please request a new one."
+        )
+
+    if reset_entry["otp_code"] != reset_data.otp_code.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OTP code."
+        )
+
+    user = session.exec(select(User).where(User.email == reset_data.email)).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    user.hashed_password = hash_password(reset_data.new_password)
+    session.add(user)
+    session.commit()
+
+    del password_resets[reset_data.email]
+
+    return {"message": "Password updated successfully. You can now log in with your new password."}
